@@ -191,7 +191,7 @@ function unsub(){if(chan){sb.removeChannel(chan);chan=null}}
 
 /* ---- auth ---- */
 function show(){
-  $('login').classList.toggle('hidden',!user);
+  $('login').classList.toggle('hidden',!!user);
   $('app').classList.toggle('hidden',!user);
   $('adm').classList.toggle('hidden',!admin);
   if(user){$('av').textContent=user.slice(0,1).toUpperCase()}
