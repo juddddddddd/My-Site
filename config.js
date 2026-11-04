@@ -3,6 +3,6 @@
 // 这个公开密钥本来就是给前端用的；数据安全靠 setup.sql 里的权限规则，不靠把它藏起来。
 // 注意：绝对不要把 service_role（secret）密钥放到这里或上传到 GitHub。
 window.APP_CONFIG = {
-  url: 'https://你的项目ID.supabase.co',
-  key: '你的 anon 公开密钥'
+  url: 'https://vkdsgfpncnvqtemrpxzl.supabase.co/rest/v1/',
+  key: 'sb_publishable_J-SzHUG2AIhJ-y6IfbjohQ_dAdNdW4p'
 };
