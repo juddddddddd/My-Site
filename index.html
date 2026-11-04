@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>我的小站</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login">
+  <div class="box card">
+    <h1 id="lt">欢迎回来</h1>
+    <div class="ph">这里是一句占位说明文字</div>
+    <input id="em" type="email" placeholder="邮箱" autocomplete="email">
+    <input id="u" class="hidden" placeholder="用户名（显示名称，2–20 位）" autocomplete="nickname">
+    <input id="p" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="err" id="err"></div>
+    <button class="btn" id="go">登录</button>
+    <button class="btn ghost" id="sw">没有账号？去注册</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h2>网站名称占位</h2>
+    <div class="who"><span class="tag hidden" id="adm">管理员</span><div class="av" id="av">U</div><button class="btn ghost" id="out">退出</button></div>
+  </header>
+
+  <section id="home" class="on">
+    <div class="card"><h3 style="margin:0 0 6px">标题占位</h3><div class="ph">这里是欢迎语或今日概览的占位文字。</div></div>
+    <div class="grid2">
+      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
+      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
+      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
+      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
+    </div>
+  </section>
+
+  <section id="calendar">
+    <div class="card">
+      <div class="calhead"><button class="btn ghost" id="pm">‹</button><b id="ym"></b><button class="btn ghost" id="nm">›</button></div>
+      <div class="cal" id="cal" style="margin-top:12px"></div>
+    </div>
+    <div class="card"><b id="seld"></b>
+      <div class="send" style="margin:10px 0"><input id="ei" placeholder="添加日程占位"><button class="btn" id="ea">添加</button></div>
+      <div id="el" class="list"></div>
+    </div>
+  </section>
+
+  <section id="countdown">
+    <div class="card"><div class="addrow">
+      <input id="cn" placeholder="倒数日名称">
+      <input id="cdt" type="date">
+      <button class="btn" id="cadd">添加</button>
+    </div></div>
+    <div id="cdl" style="display:grid;gap:10px"></div>
+  </section>
+
+  <section id="chat">
+    <div class="card chat">
+      <div class="msgs" id="msgs"></div>
+      <div class="send"><input id="mi" placeholder="输入消息占位"><button class="btn" id="ms">发送</button></div>
+    </div>
+  </section>
+
+  <section id="board">
+    <div class="card"><div class="send"><input id="bi" placeholder="写下留言占位"><button class="btn" id="bs">留言</button></div></div>
+    <div id="bl" style="display:grid;gap:10px"></div>
+  </section>
+
+  <section id="status">
+    <div class="card">
+      <b>今日状态</b>
+      <div class="ph">选择一个状态占位</div>
+      <div class="moods" id="moods">
+        <button data-m="😊">😊<span>状态占位</span></button>
+        <button data-m="😐">😐<span>状态占位</span></button>
+        <button data-m="😴">😴<span>状态占位</span></button>
+        <button data-m="🔥">🔥<span>状态占位</span></button>
+      </div>
+      <input id="note" placeholder="一句话备注占位" style="margin-top:12px">
+      <div class="addrow" style="margin-top:10px;grid-template-columns:1fr auto"><input id="sd" type="date"><button class="btn" id="ss">保存</button></div>
+    </div>
+    <div id="sl" class="list"></div>
+  </section>
+
+  <section id="log">
+    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
+    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
+    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
+  </section>
+
+  <div class="mask" id="mask"></div>
+  <aside class="drawer" id="drawer" aria-label="更多选项">
+    <div class="dh"><b>更多</b><button class="btn ghost" id="dclose">✕</button></div>
+    <button class="ditem" data-t="board"><span class="ic">📝</span>留言板</button>
+    <button class="ditem" data-t="status"><span class="ic">🌤️</span>今日状态</button>
+    <button class="ditem" data-t="log"><span class="ic">📋</span>更新日志</button>
+  </aside>
+
+  <nav><div class="in">
+    <button class="on" data-t="home"><span class="ic">🏠</span>主页</button>
+    <button data-t="calendar"><span class="ic">📅</span>日历</button>
+    <button data-t="countdown"><span class="ic">⏳</span>倒数日</button>
+    <button data-t="chat"><span class="ic">💬</span>聊天</button>
+    <button id="more"><span class="ic">☰</span>更多</button>
+  </div></nav>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[]});
+let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
+const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
+
+/* ---- supabase ---- */
+const cfg=window.APP_CONFIG||{};
+const configured=!!(cfg.url&&cfg.key)&&!/你的/.test(cfg.url+cfg.key);
+const sb=configured?supabase.createClient(cfg.url,cfg.key):null;
+const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
+const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
+const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b)=>({name:a,date:b}),event:(a,b)=>({title:a,date:b})};
+const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
+const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':e.message);
+const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
+
+function norm(k,r){ // 统一成 {a,b,c} 结构
+  const p=P[r.user_id]||{},o={id:r.id,kind:k,uid:r.user_id,owner:p.username||'未知用户',adm:!!p.is_admin,created:r.created_at,a:'',b:'',c:''};
+  if(k==='board'||k==='chat')o.a=r.body;
+  else if(k==='countdown'){o.a=r.name;o.b=r.date}
+  else if(k==='event'){o.a=r.title;o.b=r.date}
+  else{o.a=r.mood;o.b=r.date;o.c=r.note||''}
+  return o;
+}
+async function loadProfiles(){const d=await q(sb.from('profiles').select('id,username,is_admin'));P={};d.forEach(p=>P[p.id]=p)}
+async function load(){
+  await loadProfiles();
+  if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
+  user=P[uid].username;admin=!!P[uid].is_admin;
+  const [b,c,e,s,m]=await Promise.all([
+    q(sb.from('board_posts').select('*').order('created_at')),
+    q(sb.from('countdowns').select('*')),
+    q(sb.from('events').select('*')),
+    q(sb.from('statuses').select('*')),
+    q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200))]);
+  D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r))};
+  renderAll();syncStatus();
+}
+async function add(kind,a,b=''){
+  const it=norm(kind,await q(sb.from(TB[kind][0]).insert(ROW[kind](a,b)).select().single()));
+  if(!D[kind].some(x=>x.id===it.id))D[kind].push(it);
+}
+async function del(it){ // RLS 决定能否删除：本人或管理员
+  const d=await q(sb.from(it.kind==='status'?'statuses':TB[it.kind][0]).delete().eq('id',it.id).select());
+  if(!d.length)throw new Error('无权删除，或内容已被删除');
+  D[it.kind]=D[it.kind].filter(x=>x.id!==it.id);
+}
+async function edit(it){ // 仅本人
+  const v=prompt('编辑内容',it.a);if(v===null||!v.trim()||v.trim()===it.a)return;
+  await q(sb.from(TB[it.kind][0]).update({[TB[it.kind][1]]:v.trim()}).eq('id',it.id).select().single());
+  D[it.kind].find(x=>x.id===it.id).a=v.trim();
+}
+function ctl(it,canEdit=true){
+  const s=h('span','ctl');
+  if(canEdit&&mine(it))s.appendChild(xbtn(()=>act(edit(it)),'✎','编辑'));
+  if(mine(it)||admin)s.appendChild(xbtn(()=>act(del(it))));
+  return s;
+}
+async function reloadBoard(){await loadProfiles();D.board=(await q(sb.from('board_posts').select('*').order('created_at'))).map(r=>norm('board',r));renderBoard()}
+
+/* ---- 聊天室实时 ---- */
+function subscribe(){
+  unsub();
+  chan=sb.channel('chat-room').on('postgres_changes',{event:'*',schema:'public',table:'chat_messages'},async p=>{
+    if(p.eventType==='INSERT'){
+      const r=p.new;if(D.chat.some(x=>x.id===r.id))return;
+      if(!P[r.user_id])await loadProfiles().catch(()=>{});
+      if(D.chat.some(x=>x.id===r.id))return;
+      D.chat.push(norm('chat',r));renderChat();
+    }else if(p.eventType==='DELETE'){D.chat=D.chat.filter(x=>x.id!==p.old.id);renderChat()}
+  }).subscribe();
+}
+function unsub(){if(chan){sb.removeChannel(chan);chan=null}}
+
+/* ---- auth ---- */
+function show(){
+  $('login').classList.toggle('hidden',!user);
+  $('app').classList.toggle('hidden',!user);
+  $('adm').classList.toggle('hidden',!admin);
+  if(user){$('av').textContent=user.slice(0,1).toUpperCase()}
+}
+function mode(r){reg=r;$('lt').textContent=r?'创建账号':'欢迎回来';$('go').textContent=r?'注册':'登录';$('u').classList.toggle('hidden',!r);
+  $('sw').textContent=r?'已有账号？去登录':'没有账号？去注册';$('p').autocomplete=r?'new-password':'current-password';$('err').textContent=''}
+async function enter(){
+  const {data:{session}}=await sb.auth.getSession();if(!session)return;
+  uid=session.user.id;await load();subscribe();show();
+}
+async function login(){
+  const em=$('em').value.trim(),p=$('p').value,u=$('u').value.trim();
+  if(!em||!p||(reg&&!u)){$('err').textContent=reg?'请填写邮箱、用户名和密码':'请输入邮箱和密码';return}
+  $('go').disabled=true;$('err').textContent='';
+  try{
+    if(reg){
+      if(!/^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$/.test(u))throw new Error('用户名需为 2–20 位字母、数字、下划线或汉字');
+      if(p.length<8)throw new Error('密码至少 8 位');
+      if(!await q(sb.rpc('username_available',{n:u})))throw new Error('用户名已被占用');
+      const {data,error}=await sb.auth.signUp({email:em,password:p,options:{data:{username:u}}});
+      if(error)throw error;
+      if(!data.session){mode(false);$('err').textContent='注册成功，请到邮箱点击确认链接后再登录';$('go').disabled=false;return}
+    }else{const {error}=await sb.auth.signInWithPassword({email:em,password:p});if(error)throw error}
+    $('p').value='';await enter();
+  }catch(e){user=null;uid=null;admin=false;$('err').textContent=msg(e)}
+  $('go').disabled=false;
+}
+$('go').onclick=login;
+$('sw').onclick=()=>mode(!reg);
+$('p').onkeydown=e=>{if(e.key==='Enter')login()};
+function reset(){unsub();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+$('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
+if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
+else{
+  sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT'&&uid)reset()});
+  sb.auth.getSession().then(({data})=>data.session?enter():null).catch(()=>{}).finally(show);
+}
+
+/* ---- tabs + drawer ---- */
+const navBtns=document.querySelectorAll('nav button[data-t]');
+function go(t){
+  document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));
+  let main=false;navBtns.forEach(b=>{const on=b.dataset.t===t;b.classList.toggle('on',on);if(on)main=true});
+  $('more').classList.toggle('on',!main);
+  if(t==='board'&&uid)reloadBoard().catch(()=>{}); // 打开留言板时刷新，看到别人的新留言
+}
+navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
+function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
+$('more').onclick=()=>drawer(true);
+$('dclose').onclick=$('mask').onclick=()=>drawer(false);
+document.querySelectorAll('.ditem').forEach(b=>b.onclick=()=>{go(b.dataset.t);drawer(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')drawer(false)});
+
+/* ---- calendar + events ---- */
+const now=new Date();let y=now.getFullYear(),m=now.getMonth(),sel=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+function renderCal(){
+  $('ym').textContent=y+' 年 '+(m+1)+' 月';
+  const c=$('cal');c.innerHTML='';
+  '日一二三四五六'.split('').forEach(w=>c.appendChild(h('div','wd',w)));
+  const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
+  for(let i=0;i<first;i++)c.appendChild(document.createElement('span'));
+  for(let d=1;d<=days;d++){
+    const b=h('button','',d),dt=new Date(y,m,d);
+    if(dt.toDateString()===now.toDateString())b.classList.add('today');
+    if(dt.toDateString()===sel.toDateString())b.classList.add('sel');
+    if(D.event.some(e=>e.b===ymd(dt)))b.classList.add('has');
+    b.onclick=()=>{sel=dt;renderCal()};c.appendChild(b);
+  }
+  $('seld').textContent=sel.getFullYear()+' 年 '+(sel.getMonth()+1)+' 月 '+sel.getDate()+' 日';
+  const list=$('el');list.innerHTML='';
+  const evs=D.event.filter(e=>e.b===ymd(sel));
+  if(!evs.length)list.appendChild(h('div','ph','暂无日程占位'));
+  evs.forEach(e=>{const r=h('div','row'),t=h('span','',e.a);t.append(h('span','ph',who(e)));r.append(t,ctl(e));list.appendChild(r)});
+}
+$('pm').onclick=()=>{m--;if(m<0){m=11;y--}renderCal()};
+$('nm').onclick=()=>{m++;if(m>11){m=0;y++}renderCal()};
+async function addEvent(){const v=$('ei').value.trim();if(!v)return;
+  try{await add('event',v,ymd(sel));$('ei').value='';renderCal()}catch(e){fail(e)}}
+$('ea').onclick=addEvent;$('ei').onkeydown=e=>{if(e.key==='Enter')addEvent()};
+
+/* ---- countdown ---- */
+const day=86400000,t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+function renderCd(){
+  const box=$('cdl');box.innerHTML='';
+  if(!D.countdown.length)box.appendChild(h('div','ph','暂无倒数日占位'));
+  const arr=D.countdown.map(c=>{const [a,b,d]=c.b.split('-').map(Number);return {c,d:new Date(a,b-1,d)}}).sort((p,q)=>p.d-q.d);
+  arr.forEach(({c,d})=>{
+    const diff=Math.round((d-t0)/day),el=h('div','card cd'),l=h('div');
+    l.append(h('b','',c.a),h('div','ph',d.toLocaleDateString('zh-CN')+who(c)));
+    const r=h('div','n');r.append(Math.abs(diff).toString(),h('small','',diff>=0?'天后':'天前'));
+    const w=h('div','cdr');w.append(r,ctl(c));
+    el.append(l,w);box.appendChild(el);
+  });
+}
+$('cadd').onclick=async()=>{
+  const v=$('cdt').value;if(!v)return;
+  try{await add('countdown',$('cn').value.trim()||'倒数日名称占位',v);$('cn').value='';$('cdt').value='';renderCd()}catch(e){fail(e)}
+};
+
+/* ---- board（所有人共用） ---- */
+function renderBoard(){
+  const box=$('bl');box.innerHTML='';
+  if(!D.board.length)box.appendChild(h('div','ph','暂无留言占位'));
+  D.board.slice().sort((p,q)=>q.created.localeCompare(p.created)).forEach(p=>{
+    const c=h('div','card row'),l=h('div');
+    l.append(h('b','',p.owner));
+    if(p.adm)l.append(h('span','tag','管理员'));
+    l.append(h('span','ph',' · '+new Date(p.created).toLocaleString('zh-CN')),h('div','ph',p.a));
+    c.append(l,ctl(p));box.appendChild(c);
+  });
+}
+async function post(){const v=$('bi').value.trim();if(!v)return;
+  try{await add('board',v);$('bi').value='';renderBoard()}catch(e){fail(e)}}
+$('bs').onclick=post;$('bi').onkeydown=e=>{if(e.key==='Enter')post()};
+
+/* ---- chat（公共聊天室，实时） ---- */
+function renderChat(){
+  const box=$('msgs');box.innerHTML='';
+  if(!D.chat.length)box.appendChild(h('div','ph','暂无消息占位'));
+  D.chat.forEach(c=>{
+    const el=h('div','m'+(mine(c)?' me':'')),tm=new Date(c.created).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    el.append(h('div','mn',c.owner+(c.adm?' · 管理员':'')+' · '+tm),h('div','',c.a));
+    if(mine(c)||admin)el.appendChild(xbtn(()=>act(del(c)),'✕','删除'));
+    box.appendChild(el);
+  });
+  box.scrollTop=box.scrollHeight;
+}
+async function send(){const v=$('mi').value.trim();if(!v)return;
+  try{await add('chat',v);$('mi').value='';renderChat()}catch(e){fail(e)}}
+$('ms').onclick=send;$('mi').onkeydown=e=>{if(e.key==='Enter')send()};
+
+/* ---- 今日状态（按日期记录） ---- */
+function renderStatus(){
+  const box=$('sl');box.innerHTML='';
+  if(!D.status.length)box.appendChild(h('div','ph','暂无状态记录占位'));
+  D.status.slice().sort((p,q)=>q.b.localeCompare(p.b)||q.id-p.id).forEach(s=>{
+    const c=h('div','card row'),l=h('div');
+    l.append(h('b','',s.b+'  '+s.a),h('span','ph',who(s)),h('div','ph',s.c||'备注占位'));
+    c.append(l,ctl(s,false));box.appendChild(c);
+  });
+}
+function syncStatus(){ // 按所选日期，把自己的状态载入编辑区
+  const s=D.status.find(x=>mine(x)&&x.b===$('sd').value);
+  mood=s?s.a:null;$('note').value=s?s.c:'';
+  document.querySelectorAll('#moods button').forEach(b=>b.classList.toggle('on',b.dataset.m===mood));
+}
+document.querySelectorAll('#moods button').forEach(b=>b.onclick=()=>{
+  mood=b.dataset.m;document.querySelectorAll('#moods button').forEach(x=>x.classList.toggle('on',x===b));
+});
+$('sd').onchange=syncStatus;
+$('ss').onclick=async()=>{
+  const date=$('sd').value;if(!date||!mood){alert('请选择日期和状态');return}
+  try{const r=await q(sb.from('statuses').upsert({user_id:uid,date,mood,note:$('note').value.trim()},{onConflict:'user_id,date'}).select().single());
+    const it=norm('status',r);D.status=D.status.filter(x=>x.id!==it.id);D.status.push(it);renderStatus()}catch(e){fail(e)}
+};
+
+function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus()}
+$('sd').value=ymd(now);
+renderAll();
+</script>
+</body>
+</html>
