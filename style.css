@@ -94,3 +94,8 @@ section.on{display:grid}
 .m{position:relative;padding-right:26px}
 .mn{font-size:11px;opacity:.7;margin-bottom:2px}
 .m .x{position:absolute;top:2px;right:2px;font-size:11px;color:inherit;opacity:.6}
+
+/* changelog */
+textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;font:inherit;color:inherit;resize:vertical;margin-top:8px}
+textarea:focus{outline:2px solid var(--acc);outline-offset:-1px}
+.logtxt{white-space:pre-wrap}

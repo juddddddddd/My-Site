@@ -86,9 +86,13 @@
   </section>
 
   <section id="log">
-    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
-    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
-    <div class="card"><b>v0.0.0 占位</b> <span class="ph">· 日期占位</span><div class="line"></div><div class="line s"></div></div>
+    <div class="card hidden" id="lform">
+      <b id="lft">发布更新</b>
+      <input id="lv" placeholder="版本号占位，如 v1.0.0" style="margin-top:10px">
+      <textarea id="lb" placeholder="更新内容占位" rows="4"></textarea>
+      <div class="send" style="margin-top:10px"><button class="btn" id="ls">发布</button><button class="btn ghost hidden" id="lc">取消</button></div>
+    </div>
+    <div id="ll" class="list"></div>
   </section>
 
   <div class="mask" id="mask"></div>
@@ -115,14 +119,16 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
 /* ---- supabase ---- */
 const cfg=window.APP_CONFIG||{};
 const configured=!!(cfg.url&&cfg.key)&&!/你的/.test(cfg.url+cfg.key);
-const sb=configured?supabase.createClient(cfg.url,cfg.key):null;
+// 只取网址的「域名」部分，自动去掉误带的 /rest/v1/ 等路径和结尾斜杠
+const base=(()=>{try{return new URL(cfg.url.trim()).origin}catch(e){return (cfg.url||'').trim()}})();
+const sb=configured?supabase.createClient(base,cfg.key.trim()):null;
 const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
 const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b)=>({name:a,date:b}),event:(a,b)=>({title:a,date:b})};
@@ -143,14 +149,15 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m]=await Promise.all([
+  const [b,c,e,s,m,lg]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
     q(sb.from('statuses').select('*')),
-    q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200))]);
+    q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200)),
+    q(sb.from('changelog').select('*').order('created_at',{ascending:false}))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r))};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg};
   renderAll();syncStatus();
 }
 async function add(kind,a,b=''){
@@ -222,7 +229,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();resetLogForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -237,6 +244,7 @@ function go(t){
   let main=false;navBtns.forEach(b=>{const on=b.dataset.t===t;b.classList.toggle('on',on);if(on)main=true});
   $('more').classList.toggle('on',!main);
   if(t==='board'&&uid)reloadBoard().catch(()=>{}); // 打开留言板时刷新，看到别人的新留言
+  if(t==='log'&&uid)reloadLog().catch(()=>{});
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -348,7 +356,40 @@ $('ss').onclick=async()=>{
     const it=norm('status',r);D.status=D.status.filter(x=>x.id!==it.id);D.status.push(it);renderStatus()}catch(e){fail(e)}
 };
 
-function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus()}
+/* ---- 更新日志（所有人可看，仅管理员可编辑） ---- */
+let logEdit=null;
+function renderLog(){
+  $('lform').classList.toggle('hidden',!admin);
+  const box=$('ll');box.innerHTML='';
+  if(!D.log.length)box.appendChild(h('div','ph','暂无更新日志占位'));
+  D.log.forEach(e=>{
+    const c=h('div','card row'),l=h('div');
+    l.append(h('b','',e.version),h('span','ph',' · '+new Date(e.created_at).toLocaleDateString('zh-CN')),h('div','ph logtxt',e.body));
+    c.append(l);
+    if(admin){const s=h('span','ctl');s.append(xbtn(()=>startLogEdit(e),'✎','编辑'),xbtn(()=>delLog(e)));c.append(s)}
+    box.appendChild(c);
+  });
+}
+async function reloadLog(){D.log=await q(sb.from('changelog').select('*').order('created_at',{ascending:false}));renderLog()}
+function resetLogForm(){logEdit=null;$('lv').value='';$('lb').value='';$('lft').textContent='发布更新';$('ls').textContent='发布';$('lc').classList.add('hidden')}
+function startLogEdit(e){logEdit=e.id;$('lv').value=e.version;$('lb').value=e.body;$('lft').textContent='编辑更新';$('ls').textContent='保存修改';$('lc').classList.remove('hidden');$('lform').scrollIntoView?.({behavior:'smooth'})}
+async function saveLog(){
+  const version=$('lv').value.trim(),body=$('lb').value.trim();
+  if(!version||!body){alert('请填写版本号和更新内容');return}
+  try{
+    if(logEdit){const r=await q(sb.from('changelog').update({version,body}).eq('id',logEdit).select().single());D.log=D.log.map(x=>x.id===r.id?r:x)}
+    else{D.log.unshift(await q(sb.from('changelog').insert({version,body}).select().single()))}
+    resetLogForm();renderLog();
+  }catch(e){fail(e)}
+}
+async function delLog(e){
+  if(!confirm('确定删除这条更新日志？'))return;
+  try{const d=await q(sb.from('changelog').delete().eq('id',e.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');
+    D.log=D.log.filter(x=>x.id!==e.id);if(logEdit===e.id)resetLogForm();renderLog()}catch(err){fail(err)}
+}
+$('ls').onclick=saveLog;$('lc').onclick=resetLogForm;
+
+function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog()}
 $('sd').value=ymd(now);
 renderAll();
 </script>
