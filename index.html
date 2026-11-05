@@ -86,6 +86,17 @@
   </section>
 
   <section id="log">
+    <div class="card" id="plan">
+      <b>计划更新</b>
+      <div class="send hidden" id="pform" style="margin:10px 0"><input id="pi" placeholder="添加计划占位"><button class="btn" id="pa">添加</button></div>
+      <div id="pl" class="list" style="margin-top:10px"></div>
+    </div>
+    <div class="card" id="req">
+      <b>求更新</b>
+      <div class="send" style="margin:10px 0"><input id="ri" placeholder="理由（选填）"><button class="btn" id="rb">求更新</button></div>
+      <div id="rl" class="list"></div>
+    </div>
+    <div class="sh">更新记录</div>
     <div class="card hidden" id="lform">
       <b id="lft">发布更新</b>
       <input id="lv" placeholder="版本号占位，如 v1.0.0" style="margin-top:10px">
@@ -119,7 +130,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
@@ -133,7 +144,7 @@ const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
 const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b)=>({name:a,date:b}),event:(a,b)=>({title:a,date:b})};
 const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
-const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':e.message);
+const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':e.message);
 const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
 
 function norm(k,r){ // 统一成 {a,b,c} 结构
@@ -149,15 +160,17 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m,lg]=await Promise.all([
+  const [b,c,e,s,m,lg,pl,rq]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
     q(sb.from('statuses').select('*')),
     q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200)),
-    q(sb.from('changelog').select('*').order('created_at',{ascending:false}))]);
+    q(sb.from('changelog').select('*').order('created_at',{ascending:false})),
+    q(sb.from('planned_updates').select('*').order('created_at')),
+    q(sb.from('update_requests').select('*'))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm)};
   renderAll();syncStatus();
 }
 async function add(kind,a,b=''){
@@ -359,7 +372,7 @@ $('ss').onclick=async()=>{
 /* ---- 更新日志（所有人可看，仅管理员可编辑） ---- */
 let logEdit=null;
 function renderLog(){
-  $('lform').classList.toggle('hidden',!admin);
+  $('lform').classList.toggle('hidden',!admin);$('pform').classList.toggle('hidden',!admin);renderPlan();renderReq();
   const box=$('ll');box.innerHTML='';
   if(!D.log.length)box.appendChild(h('div','ph','暂无更新日志占位'));
   D.log.forEach(e=>{
@@ -370,7 +383,11 @@ function renderLog(){
     box.appendChild(c);
   });
 }
-async function reloadLog(){D.log=await q(sb.from('changelog').select('*').order('created_at',{ascending:false}));renderLog()}
+async function reloadLog(){
+  await loadProfiles();
+  const [lg,pl,rq]=await Promise.all([q(sb.from('changelog').select('*').order('created_at',{ascending:false})),q(sb.from('planned_updates').select('*').order('created_at')),q(sb.from('update_requests').select('*'))]);
+  D.log=lg;D.plan=pl;D.req=rq.map(reqNorm);renderLog();
+}
 function resetLogForm(){logEdit=null;$('lv').value='';$('lb').value='';$('lft').textContent='发布更新';$('ls').textContent='发布';$('lc').classList.add('hidden')}
 function startLogEdit(e){logEdit=e.id;$('lv').value=e.version;$('lb').value=e.body;$('lft').textContent='编辑更新';$('ls').textContent='保存修改';$('lc').classList.remove('hidden');$('lform').scrollIntoView?.({behavior:'smooth'})}
 async function saveLog(){
@@ -388,6 +405,54 @@ async function delLog(e){
     D.log=D.log.filter(x=>x.id!==e.id);if(logEdit===e.id)resetLogForm();renderLog()}catch(err){fail(err)}
 }
 $('ls').onclick=saveLog;$('lc').onclick=resetLogForm;
+
+/* ---- 计划更新（仅管理员可编辑） ---- */
+function renderPlan(){
+  const box=$('pl');box.innerHTML='';
+  if(!D.plan.length)box.appendChild(h('div','ph','暂无计划更新占位'));
+  D.plan.forEach(p=>{
+    const r=h('div','row sep');r.append(h('span','','• '+p.body));
+    if(admin){const s=h('span','ctl');s.append(xbtn(()=>editPlan(p),'✎','编辑'),xbtn(()=>delPlan(p)));r.append(s)}
+    box.appendChild(r);
+  });
+}
+async function addPlan(){const v=$('pi').value.trim();if(!v)return;
+  try{D.plan.push(await q(sb.from('planned_updates').insert({body:v}).select().single()));$('pi').value='';renderPlan()}catch(e){fail(e)}}
+async function editPlan(p){const v=prompt('编辑计划内容',p.body);if(v===null||!v.trim()||v.trim()===p.body)return;
+  try{const r=await q(sb.from('planned_updates').update({body:v.trim()}).eq('id',p.id).select().single());D.plan=D.plan.map(x=>x.id===r.id?r:x);renderPlan()}catch(e){fail(e)}}
+async function delPlan(p){if(!confirm('确定删除这条计划？'))return;
+  try{const d=await q(sb.from('planned_updates').delete().eq('id',p.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');D.plan=D.plan.filter(x=>x.id!==p.id);renderPlan()}catch(e){fail(e)}}
+$('pa').onclick=addPlan;$('pi').onkeydown=e=>{if(e.key==='Enter')addPlan()};
+
+/* ---- 求更新（所有人可提交，发布人可编辑/删除） ---- */
+const reqNorm=r=>({id:r.id,uid:r.user_id,owner:(P[r.user_id]||{}).username||'未知用户',adm:!!(P[r.user_id]||{}).is_admin,created:r.created_at,reason:r.reason||''});
+function renderReq(){
+  const box=$('rl');box.innerHTML='';
+  if(!D.req.length)box.appendChild(h('div','ph','暂无求更新占位'));
+  D.req.slice().sort((a,b)=>b.created.localeCompare(a.created)).forEach(r=>{
+    const row=h('div','row sep'),l=h('div');
+    l.append(h('b','',r.owner));
+    if(r.adm)l.append(h('span','tag','管理员'));
+    l.append(h('span','ph',' · '+new Date(r.created).toLocaleString('zh-CN')),h('div','ph',r.reason||'未填写理由占位'));
+    row.append(l);
+    const s=h('span','ctl');
+    if(r.uid===uid)s.append(xbtn(()=>editReq(r),'✎','编辑'));
+    if(r.uid===uid||admin)s.append(xbtn(()=>delReq(r)));
+    row.append(s);box.appendChild(row);
+  });
+}
+async function askUpdate(){ // 点击即提交，理由可不填
+  $('rb').disabled=true;
+  try{D.req.push(reqNorm(await q(sb.from('update_requests').insert({reason:$('ri').value.trim()}).select().single())));$('ri').value='';renderReq()}
+  catch(e){fail(/row-level security/i.test(e.message)?new Error('你的求更新已达 20 条上限，请先删除旧的'):e)}
+  $('rb').disabled=false;
+}
+async function editReq(r){const v=prompt('编辑理由（可留空）',r.reason);if(v===null||v.trim()===r.reason)return;
+  try{const x=await q(sb.from('update_requests').update({reason:v.trim()}).eq('id',r.id).select().single());D.req=D.req.map(y=>y.id===r.id?reqNorm(x):y);renderReq()}catch(e){fail(e)}}
+async function delReq(r){if(!confirm('确定删除这条求更新？'))return;
+  try{const d=await q(sb.from('update_requests').delete().eq('id',r.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');D.req=D.req.filter(x=>x.id!==r.id);renderReq()}catch(e){fail(e)}}
+$('rb').onclick=askUpdate;
+
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog()}
 $('sd').value=ymd(now);
