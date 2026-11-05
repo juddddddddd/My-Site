@@ -91,11 +91,6 @@
       <div class="send hidden" id="pform" style="margin:10px 0"><input id="pi" placeholder="添加计划占位"><button class="btn" id="pa">添加</button></div>
       <div id="pl" class="list" style="margin-top:10px"></div>
     </div>
-    <div class="card" id="req">
-      <b>求更新</b>
-      <div class="send" style="margin:10px 0"><input id="ri" placeholder="理由（选填）"><button class="btn" id="rb">求更新</button></div>
-      <div id="rl" class="list"></div>
-    </div>
     <div class="sh">更新记录</div>
     <div class="card hidden" id="lform">
       <b id="lft">发布更新</b>
@@ -104,6 +99,15 @@
       <div class="send" style="margin-top:10px"><button class="btn" id="ls">发布</button><button class="btn ghost hidden" id="lc">取消</button></div>
     </div>
     <div id="ll" class="list"></div>
+    <div class="card" id="req">
+      <b>求更新</b>
+      <div class="send" style="margin:10px 0"><button class="btn" id="rb">求更新</button></div>
+      <div class="hidden" id="rform" style="margin:0 0 10px">
+        <div class="ph" style="margin-bottom:6px">可以写下理由（选填）。不想写，点「跳过」也会直接提交。</div>
+        <div class="send"><input id="ri" placeholder="理由占位"><button class="btn" id="rs">提交</button><button class="btn ghost" id="rc">跳过</button></div>
+      </div>
+      <div id="rl" class="list"></div>
+    </div>
   </section>
 
   <div class="mask" id="mask"></div>
@@ -242,7 +246,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();resetLogForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();resetLogForm();closeReason();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -441,17 +445,20 @@ function renderReq(){
     row.append(s);box.appendChild(row);
   });
 }
-async function askUpdate(){ // 点击即提交，理由可不填
-  $('rb').disabled=true;
-  try{D.req.push(reqNorm(await q(sb.from('update_requests').insert({reason:$('ri').value.trim()}).select().single())));$('ri').value='';renderReq()}
+function closeReason(){$('ri').value='';$('rform').classList.add('hidden')}
+async function submitReq(withReason){ // 先点「求更新」打开输入框；填完点「提交」，或点「跳过」不带理由提交
+  const reason=withReason?$('ri').value.trim():'';
+  $('rs').disabled=$('rc').disabled=true;
+  try{D.req.push(reqNorm(await q(sb.from('update_requests').insert({reason}).select().single())));closeReason();renderReq()}
   catch(e){fail(/row-level security/i.test(e.message)?new Error('你的求更新已达 20 条上限，请先删除旧的'):e)}
-  $('rb').disabled=false;
+  $('rs').disabled=$('rc').disabled=false;
 }
+$('rb').onclick=()=>{const f=$('rform');if(f.classList.contains('hidden')){f.classList.remove('hidden');$('ri').value='';$('ri').focus?.()}else closeReason()};
+$('rs').onclick=()=>submitReq(true);$('rc').onclick=()=>submitReq(false);$('ri').onkeydown=e=>{if(e.key==='Enter')submitReq(true)};
 async function editReq(r){const v=prompt('编辑理由（可留空）',r.reason);if(v===null||v.trim()===r.reason)return;
   try{const x=await q(sb.from('update_requests').update({reason:v.trim()}).eq('id',r.id).select().single());D.req=D.req.map(y=>y.id===r.id?reqNorm(x):y);renderReq()}catch(e){fail(e)}}
 async function delReq(r){if(!confirm('确定删除这条求更新？'))return;
   try{const d=await q(sb.from('update_requests').delete().eq('id',r.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');D.req=D.req.filter(x=>x.id!==r.id);renderReq()}catch(e){fail(e)}}
-$('rb').onclick=askUpdate;
 
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog()}
