@@ -86,12 +86,9 @@
   </section>
 
   <section id="log">
-    <div class="card" id="plan">
-      <b>计划更新</b>
-      <div class="send hidden" id="pform" style="margin:10px 0"><input id="pi" placeholder="添加计划占位"><button class="btn" id="pa">添加</button></div>
-      <div id="pl" class="list" style="margin-top:10px"></div>
-    </div>
-    <div class="sh">更新记录</div>
+    <div class="logcols">
+      <div class="col">
+        <div class="sh">更新记录</div>
     <div class="card hidden" id="lform">
       <b id="lft">发布更新</b>
       <input id="lv" placeholder="版本号占位，如 v1.0.0" style="margin-top:10px">
@@ -99,7 +96,14 @@
       <div class="send" style="margin-top:10px"><button class="btn" id="ls">发布</button><button class="btn ghost hidden" id="lc">取消</button></div>
     </div>
     <div id="ll" class="list"></div>
-    <div class="card" id="req">
+      </div>
+      <div class="col">
+        <div class="card" id="plan">
+      <b>计划更新</b>
+      <div class="send hidden" id="pform" style="margin:10px 0"><input id="pi" placeholder="添加计划占位"><button class="btn" id="pa">添加</button></div>
+      <div id="pl" class="list" style="margin-top:10px"></div>
+    </div>
+        <div class="card" id="req">
       <b>求更新</b>
       <div class="send" style="margin:10px 0"><button class="btn" id="rb">求更新</button></div>
       <div class="hidden" id="rform" style="margin:0 0 10px">
@@ -107,6 +111,8 @@
         <div class="send"><input id="ri" placeholder="理由占位"><button class="btn" id="rs">提交</button><button class="btn ghost" id="rc">跳过</button></div>
       </div>
       <div id="rl" class="list"></div>
+    </div>
+      </div>
     </div>
   </section>
 
