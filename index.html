@@ -28,12 +28,16 @@
   </header>
 
   <section id="home" class="on">
-    <div class="card"><h3 style="margin:0 0 6px">标题占位</h3><div class="ph">这里是欢迎语或今日概览的占位文字。</div></div>
-    <div class="grid2">
-      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
-      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
-      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
-      <div class="card"><b>卡片标题占位</b><div class="line"></div><div class="line s"></div></div>
+    <div class="card" id="hero">
+      <div class="row"><div><h3 id="ht" style="margin:0 0 6px"></h3><div class="ph logtxt" id="hb"></div></div><span class="ctl" id="hc"></span></div>
+    </div>
+    <div class="grid2" id="hcards"></div>
+    <div class="hidden" id="hadd"><button class="btn ghost" id="hab">＋ 添加卡片</button></div>
+    <div class="card hidden" id="hform">
+      <b id="hft">编辑主页</b>
+      <input id="hti" placeholder="标题占位" style="margin-top:10px">
+      <textarea id="hbi" placeholder="内容占位" rows="4"></textarea>
+      <div class="send" style="margin-top:10px"><button class="btn" id="hs">保存</button><button class="btn ghost" id="hx">取消</button></div>
     </div>
   </section>
 
@@ -140,7 +144,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
@@ -170,7 +174,7 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m,lg,pl,rq]=await Promise.all([
+  const [b,c,e,s,m,lg,pl,rq,hm]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
@@ -178,9 +182,10 @@ async function load(){
     q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200)),
     q(sb.from('changelog').select('*').order('created_at',{ascending:false})),
     q(sb.from('planned_updates').select('*').order('created_at')),
-    q(sb.from('update_requests').select('*'))]);
+    q(sb.from('update_requests').select('*')),
+    q(sb.from('home_blocks').select('*').order('created_at'))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm)};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm};
   renderAll();syncStatus();
 }
 async function add(kind,a,b=''){
@@ -252,7 +257,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();resetLogForm();closeReason();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();resetLogForm();closeReason();closeHome();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -268,6 +273,7 @@ function go(t){
   $('more').classList.toggle('on',!main);
   if(t==='board'&&uid)reloadBoard().catch(()=>{}); // 打开留言板时刷新，看到别人的新留言
   if(t==='log'&&uid)reloadLog().catch(()=>{});
+  if(t==='home'&&uid)reloadHome().catch(()=>{});
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -343,7 +349,7 @@ function renderChat(){
   const box=$('msgs');box.innerHTML='';
   if(!D.chat.length)box.appendChild(h('div','ph','暂无消息占位'));
   D.chat.forEach(c=>{
-    const el=h('div','m'+(mine(c)?' me':'')),tm=new Date(c.created).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    const el=h('div','m'+(mine(c)?' me':'')),dt=new Date(c.created),tm=ymd(dt)+' '+pad(dt.getHours())+':'+pad(dt.getMinutes()); // 年-月-日 时:分
     el.append(h('div','mn',c.owner+(c.adm?' · 管理员':'')+' · '+tm),h('div','',c.a));
     if(mine(c)||admin)el.appendChild(xbtn(()=>act(del(c)),'✕','删除'));
     box.appendChild(el);
@@ -467,7 +473,55 @@ async function delReq(r){if(!confirm('确定删除这条求更新？'))return;
   try{const d=await q(sb.from('update_requests').delete().eq('id',r.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');D.req=D.req.filter(x=>x.id!==r.id);renderReq()}catch(e){fail(e)}}
 
 
-function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog()}
+/* ---- 主页内容（所有人可看，仅管理员可编辑） ---- */
+let homeEdit=null; // null=未在编辑；'hero'=欢迎区；'new'=新卡片；对象=正在编辑的卡片
+const HERO_DEF={title:'标题占位',body:'这里是欢迎语或今日概览的占位文字。'};
+function renderHome(){
+  const hero=D.home.find(x=>x.kind==='hero')||HERO_DEF;
+  $('ht').textContent=hero.title;$('hb').textContent=hero.body;
+  const hc=$('hc');hc.innerHTML='';if(admin)hc.appendChild(xbtn(()=>openHome('hero'),'✎','编辑'));
+  const box=$('hcards');box.innerHTML='';
+  const cards=D.home.filter(x=>x.kind==='card');
+  if(!cards.length)box.appendChild(h('div','ph','暂无卡片占位'));
+  cards.forEach(c=>{
+    const el=h('div','card'),top=h('div','row');
+    top.append(h('b','',c.title||'卡片标题占位'));
+    if(admin){const s=h('span','ctl');s.append(xbtn(()=>openHome(c),'✎','编辑'),xbtn(()=>delHome(c)));top.append(s)}
+    el.append(top,h('div','ph logtxt',c.body||'卡片内容占位'));box.appendChild(el);
+  });
+  $('hadd').classList.toggle('hidden',!admin);
+  if(!admin)closeHome();
+}
+function openHome(t){
+  homeEdit=t;$('hform').classList.remove('hidden');
+  if(t==='new'){$('hft').textContent='添加卡片';$('hti').value='';$('hbi').value=''}
+  else if(t==='hero'){const x=D.home.find(y=>y.kind==='hero')||HERO_DEF;$('hft').textContent='编辑欢迎区';$('hti').value=x.title;$('hbi').value=x.body}
+  else{$('hft').textContent='编辑卡片';$('hti').value=t.title;$('hbi').value=t.body}
+  $('hform').scrollIntoView?.({behavior:'smooth'});
+}
+function closeHome(){homeEdit=null;$('hform').classList.add('hidden');$('hti').value='';$('hbi').value=''}
+async function saveHome(){
+  const title=$('hti').value.trim(),body=$('hbi').value.trim();
+  if(!title&&!body){alert('标题和内容不能都为空');return}
+  try{
+    if(homeEdit==='new'){D.home.push(await q(sb.from('home_blocks').insert({kind:'card',title,body}).select().single()))}
+    else if(homeEdit==='hero'){
+      const ex=D.home.find(x=>x.kind==='hero');
+      const r=await q(ex?sb.from('home_blocks').update({title,body}).eq('id',ex.id).select().single():sb.from('home_blocks').insert({kind:'hero',title,body}).select().single());
+      D.home=ex?D.home.map(x=>x.id===r.id?r:x):[...D.home,r];
+    }else{const r=await q(sb.from('home_blocks').update({title,body}).eq('id',homeEdit.id).select().single());D.home=D.home.map(x=>x.id===r.id?r:x)}
+    closeHome();renderHome();
+  }catch(e){fail(e)}
+}
+async function delHome(c){
+  if(!confirm('确定删除这张卡片？'))return;
+  try{const d=await q(sb.from('home_blocks').delete().eq('id',c.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');
+    D.home=D.home.filter(x=>x.id!==c.id);if(homeEdit&&homeEdit.id===c.id)closeHome();renderHome()}catch(e){fail(e)}
+}
+async function reloadHome(){D.home=await q(sb.from('home_blocks').select('*').order('created_at'));renderHome()}
+$('hs').onclick=saveHome;$('hx').onclick=closeHome;$('hab').onclick=()=>openHome('new');
+
+function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome()}
 $('sd').value=ymd(now);
 renderAll();
 </script>
