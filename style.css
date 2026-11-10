@@ -109,3 +109,17 @@ textarea:focus{outline:2px solid var(--acc);outline-offset:-1px}
 .logcols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
 .logcols .col{display:grid;gap:14px;min-width:0;align-content:start}
 @media (max-width:640px){.logcols{grid-template-columns:1fr}}
+
+/* diary */
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.dbox{min-width:0;display:grid;gap:8px}
+.dbox.wide{grid-column:1/-1}
+.dbox textarea{margin-top:0}
+.dtop{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dbar{display:flex;gap:8px;flex-wrap:wrap}
+.dbody.clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+.btn.sm{padding:4px 10px;font-size:13px;justify-self:start}
+.btn.plus{width:40px;height:40px;border-radius:50%;font-size:22px;line-height:1;padding:0}
+select{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;font:inherit;color:inherit}
+select:focus{outline:2px solid var(--acc);outline-offset:-1px}
+@media (max-width:640px){.dgrid,.dtop{grid-template-columns:1fr}}

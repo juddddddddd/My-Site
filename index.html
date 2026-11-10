@@ -120,11 +120,17 @@
     </div>
   </section>
 
+  <section id="diary">
+    <div class="row"><b>日记</b><button class="btn plus" id="dadd" title="添加新方框">＋</button></div>
+    <div class="dgrid" id="dg"></div>
+  </section>
+
   <div class="mask" id="mask"></div>
   <aside class="drawer" id="drawer" aria-label="更多选项">
     <div class="dh"><b>更多</b><button class="btn ghost" id="dclose">✕</button></div>
     <button class="ditem" data-t="board"><span class="ic">📝</span>留言板</button>
     <button class="ditem" data-t="status"><span class="ic">🌤️</span>今日状态</button>
+    <button class="ditem" data-t="diary"><span class="ic">📔</span>日记</button>
     <button class="ditem" data-t="log"><span class="ic">📋</span>更新日志</button>
   </aside>
 
@@ -144,7 +150,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[],diary:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
@@ -158,7 +164,7 @@ const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
 const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b)=>({name:a,date:b}),event:(a,b)=>({title:a,date:b})};
 const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
-const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':e.message);
+const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':/limit reached/i.test(e.message)?'数量已达上限，请先删除旧的':e.message);
 const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
 
 function norm(k,r){ // 统一成 {a,b,c} 结构
@@ -174,7 +180,7 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m,lg,pl,rq,hm]=await Promise.all([
+  const [b,c,e,s,m,lg,pl,rq,hm,dr]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
@@ -183,9 +189,11 @@ async function load(){
     q(sb.from('changelog').select('*').order('created_at',{ascending:false})),
     q(sb.from('planned_updates').select('*').order('created_at')),
     q(sb.from('update_requests').select('*')),
-    q(sb.from('home_blocks').select('*').order('created_at'))]);
+    q(sb.from('home_blocks').select('*').order('created_at')),
+    q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false}))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm,diary:dr.map(diaryNorm)};
+  ensureDraft();
   renderAll();syncStatus();
 }
 async function add(kind,a,b=''){
@@ -257,7 +265,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();resetLogForm();closeReason();closeHome();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();resetLogForm();closeReason();closeHome();resetDiary();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -274,6 +282,7 @@ function go(t){
   if(t==='board'&&uid)reloadBoard().catch(()=>{}); // 打开留言板时刷新，看到别人的新留言
   if(t==='log'&&uid)reloadLog().catch(()=>{});
   if(t==='home'&&uid)reloadHome().catch(()=>{});
+  if(t==='diary'&&uid)reloadDiary().catch(()=>{});
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -462,7 +471,7 @@ async function submitReq(withReason){ // 先点「求更新」打开输入框；
   const reason=withReason?$('ri').value.trim():'';
   $('rs').disabled=$('rc').disabled=true;
   try{D.req.push(reqNorm(await q(sb.from('update_requests').insert({reason}).select().single())));closeReason();renderReq()}
-  catch(e){fail(/row-level security/i.test(e.message)?new Error('你的求更新已达 20 条上限，请先删除旧的'):e)}
+  catch(e){fail(/row-level security|limit reached/i.test(e.message)?new Error('你的求更新已达 20 条上限，请先删除旧的'):e)}
   $('rs').disabled=$('rc').disabled=false;
 }
 $('rb').onclick=()=>{const f=$('rform');if(f.classList.contains('hidden')){f.classList.remove('hidden');$('ri').value='';$('ri').focus?.()}else closeReason()};
@@ -521,7 +530,67 @@ async function delHome(c){
 async function reloadHome(){D.home=await q(sb.from('home_blocks').select('*').order('created_at'));renderHome()}
 $('hs').onclick=saveHome;$('hx').onclick=closeHome;$('hab').onclick=()=>openHome('new');
 
-function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome()}
+/* ---- 日记（两列方框；可设仅自己/所有人可见；管理员可删，用户可增、可改自己的） ---- */
+const diaryNorm=r=>({id:r.id,uid:r.user_id,owner:(P[r.user_id]||{}).username||'未知用户',date:r.entry_date,body:r.body,pub:!!r.is_public,created:r.created_at});
+let diaryDrafts=[],diaryEdit={},diaryOpen=new Set(),dkey=0;
+const newDraft=()=>({k:'d'+(++dkey),date:ymd(new Date()),body:'',pub:false});
+const ensureDraft=()=>{if(!diaryDrafts.length)diaryDrafts.push(newDraft())}; // 默认保留一个空白方框
+function resetDiary(){diaryDrafts=[];diaryEdit={};diaryOpen.clear()}
+const wd=s=>{const [a,b,c]=s.split('-').map(Number);return '周'+'日一二三四五六'[new Date(a,b-1,c).getDay()]};
+const sortDiary=()=>D.diary.sort((a,b)=>b.date.localeCompare(a.date)||b.created.localeCompare(a.created));
+function toggleWide(key){diaryOpen.has(key)?diaryOpen.delete(key):diaryOpen.add(key);renderDiary()}
+function editBox(st,key,onSave,onCancel){ // 新建 / 编辑用的方框
+  const wide=diaryOpen.has(key),box=h('div','card dbox'+(wide?' wide':'')),top=h('div','dtop');
+  const di=h('input');di.type='date';di.value=st.date;di.onchange=()=>{st.date=di.value};
+  const sel=h('select');[['0','🔒 仅自己可见'],['1','🌐 所有人可见']].forEach(([v,t])=>{const o=h('option','',t);o.value=v;sel.appendChild(o)});
+  sel.value=st.pub?'1':'0';sel.onchange=()=>{st.pub=sel.value==='1'};
+  top.append(di,sel);
+  const ta=h('textarea');ta.rows=wide?14:5;ta.placeholder='正文占位';ta.value=st.body;ta.oninput=()=>{st.body=ta.value};
+  const bar=h('div','dbar'),ex=h('button','btn ghost',wide?'收起':'扩展'),sv=h('button','btn','保存');
+  ex.onclick=()=>toggleWide(key);sv.onclick=onSave;bar.append(ex,sv);
+  if(onCancel){const c=h('button','btn ghost','取消');c.onclick=onCancel;bar.append(c)}
+  box.append(top,ta,bar);return box;
+}
+function readBox(e){ // 已保存的方框
+  const key='e'+e.id,wide=diaryOpen.has(key),long=e.body.length>140||e.body.split('\n').length>5;
+  const box=h('div','card dbox'+(wide?' wide':'')),top=h('div','row'),l=h('div');
+  l.append(h('b','',e.date+' · '+wd(e.date)));
+  if(!mine(e))l.append(h('span','ph',' · '+e.owner));
+  l.append(h('span','tag',e.pub?'🌐 所有人可见':'🔒 仅自己可见'));
+  const s=h('span','ctl');
+  if(mine(e))s.append(xbtn(()=>{diaryEdit[e.id]={date:e.date,body:e.body,pub:e.pub};renderDiary()},'✎','编辑'));
+  if(admin)s.append(xbtn(()=>delDiary(e)));
+  top.append(l,s);
+  box.append(top,h('div','ph logtxt dbody'+(long&&!wide?' clamp':''),e.body));
+  if(long){const ex=h('button','btn ghost sm',wide?'收起':'扩展');ex.onclick=()=>toggleWide(key);box.append(ex)}
+  return box;
+}
+function renderDiary(){
+  const g=$('dg');g.innerHTML='';
+  diaryDrafts.forEach(dr=>g.appendChild(editBox(dr,dr.k,()=>saveDraft(dr),diaryDrafts.length>1?()=>{diaryDrafts=diaryDrafts.filter(x=>x!==dr);renderDiary()}:null)));
+  D.diary.forEach(e=>{const st=diaryEdit[e.id];
+    g.appendChild(st?editBox(st,'e'+e.id,()=>saveEdit(e),()=>{delete diaryEdit[e.id];renderDiary()}):readBox(e))});
+}
+const diaryErr=e=>fail(/limit reached/i.test(e.message)?new Error('日记数量已达上限（500 篇）'):e);
+async function saveDraft(dr){
+  const body=dr.body.trim();if(!body){alert('请先写点内容');return}if(!dr.date){alert('请选择日期');return}
+  try{D.diary.push(diaryNorm(await q(sb.from('diary_entries').insert({entry_date:dr.date,body,is_public:dr.pub}).select().single())));sortDiary();
+    diaryDrafts=diaryDrafts.filter(x=>x!==dr);diaryOpen.delete(dr.k);ensureDraft();renderDiary()}catch(e){diaryErr(e)}
+}
+async function saveEdit(e){
+  const st=diaryEdit[e.id],body=st.body.trim();if(!body){alert('正文不能为空');return}if(!st.date){alert('请选择日期');return}
+  try{const r=diaryNorm(await q(sb.from('diary_entries').update({entry_date:st.date,body,is_public:st.pub}).eq('id',e.id).select().single()));
+    D.diary=D.diary.map(x=>x.id===e.id?r:x);sortDiary();delete diaryEdit[e.id];renderDiary()}catch(err){fail(err)}
+}
+async function delDiary(e){
+  if(!confirm('确定删除这个方框？'))return;
+  try{const d=await q(sb.from('diary_entries').delete().eq('id',e.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');
+    D.diary=D.diary.filter(x=>x.id!==e.id);delete diaryEdit[e.id];diaryOpen.delete('e'+e.id);renderDiary()}catch(err){fail(err)}
+}
+async function reloadDiary(){await loadProfiles();D.diary=(await q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false}))).map(diaryNorm);renderDiary()}
+$('dadd').onclick=()=>{diaryDrafts.unshift(newDraft());renderDiary()};
+
+function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary()}
 $('sd').value=ymd(now);
 renderAll();
 </script>
