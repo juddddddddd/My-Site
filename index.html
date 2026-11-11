@@ -531,13 +531,13 @@ async function reloadHome(){D.home=await q(sb.from('home_blocks').select('*').or
 $('hs').onclick=saveHome;$('hx').onclick=closeHome;$('hab').onclick=()=>openHome('new');
 
 /* ---- 日记（两列方框；可设仅自己/所有人可见；管理员可删，用户可增、可改自己的） ---- */
+// D.diary 里既有已保存的日记，也有还没保存的空白方框（draft）。点「保存」时，那个空白方框原地变成已保存的日记，不会多出新方框。
 const diaryNorm=r=>({id:r.id,uid:r.user_id,owner:(P[r.user_id]||{}).username||'未知用户',date:r.entry_date,body:r.body,pub:!!r.is_public,created:r.created_at});
-let diaryDrafts=[],diaryEdit={},diaryOpen=new Set(),dkey=0;
-const newDraft=()=>({k:'d'+(++dkey),date:ymd(new Date()),body:'',pub:false});
-const ensureDraft=()=>{if(!diaryDrafts.length)diaryDrafts.push(newDraft())}; // 默认保留一个空白方框
-function resetDiary(){diaryDrafts=[];diaryEdit={};diaryOpen.clear()}
+let diaryEdit={},diaryOpen=new Set(),dkey=0;
+const newDraft=()=>({k:'d'+(++dkey),id:null,draft:true,date:ymd(new Date()),body:'',pub:false});
+const ensureDraft=()=>{if(!D.diary.some(x=>x.draft))D.diary.unshift(newDraft())}; // 登录后默认显示一个空白方框
+function resetDiary(){diaryEdit={};diaryOpen.clear()}
 const wd=s=>{const [a,b,c]=s.split('-').map(Number);return '周'+'日一二三四五六'[new Date(a,b-1,c).getDay()]};
-const sortDiary=()=>D.diary.sort((a,b)=>b.date.localeCompare(a.date)||b.created.localeCompare(a.created));
 function toggleWide(key){diaryOpen.has(key)?diaryOpen.delete(key):diaryOpen.add(key);renderDiary()}
 function editBox(st,key,onSave,onCancel){ // 新建 / 编辑用的方框
   const wide=diaryOpen.has(key),box=h('div','card dbox'+(wide?' wide':'')),top=h('div','dtop');
@@ -562,33 +562,44 @@ function readBox(e){ // 已保存的方框
   if(admin)s.append(xbtn(()=>delDiary(e)));
   top.append(l,s);
   box.append(top,h('div','ph logtxt dbody'+(long&&!wide?' clamp':''),e.body));
-  if(long){const ex=h('button','btn ghost sm',wide?'收起':'扩展');ex.onclick=()=>toggleWide(key);box.append(ex)}
+  if(long||wide){const ex=h('button','btn ghost sm',wide?'收起':'扩展');ex.onclick=()=>toggleWide(key);box.append(ex)}
   return box;
 }
 function renderDiary(){
-  const g=$('dg');g.innerHTML='';
-  diaryDrafts.forEach(dr=>g.appendChild(editBox(dr,dr.k,()=>saveDraft(dr),diaryDrafts.length>1?()=>{diaryDrafts=diaryDrafts.filter(x=>x!==dr);renderDiary()}:null)));
-  D.diary.forEach(e=>{const st=diaryEdit[e.id];
-    g.appendChild(st?editBox(st,'e'+e.id,()=>saveEdit(e),()=>{delete diaryEdit[e.id];renderDiary()}):readBox(e))});
+  const g=$('dg');g.innerHTML='';const nd=D.diary.filter(x=>x.draft).length;
+  D.diary.forEach(x=>{
+    if(x.draft)g.appendChild(editBox(x,x.k,()=>saveDraft(x),nd>1?()=>{D.diary=D.diary.filter(y=>y!==x);renderDiary()}:null));
+    else if(diaryEdit[x.id])g.appendChild(editBox(diaryEdit[x.id],'e'+x.id,()=>saveEdit(x),()=>{delete diaryEdit[x.id];renderDiary()}));
+    else g.appendChild(readBox(x));
+  });
 }
 const diaryErr=e=>fail(/limit reached/i.test(e.message)?new Error('日记数量已达上限（500 篇）'):e);
 async function saveDraft(dr){
   const body=dr.body.trim();if(!body){alert('请先写点内容');return}if(!dr.date){alert('请选择日期');return}
-  try{D.diary.push(diaryNorm(await q(sb.from('diary_entries').insert({entry_date:dr.date,body,is_public:dr.pub}).select().single())));sortDiary();
-    diaryDrafts=diaryDrafts.filter(x=>x!==dr);diaryOpen.delete(dr.k);ensureDraft();renderDiary()}catch(e){diaryErr(e)}
+  try{const saved=diaryNorm(await q(sb.from('diary_entries').insert({entry_date:dr.date,body,is_public:dr.pub}).select().single()));
+    const i=D.diary.indexOf(dr);if(i>=0)D.diary[i]=saved;else D.diary.unshift(saved); // 原地变成已保存的日记
+    if(diaryOpen.delete(dr.k))diaryOpen.add('e'+saved.id); // 展开状态也保留
+    renderDiary()}catch(e){diaryErr(e)}
 }
 async function saveEdit(e){
   const st=diaryEdit[e.id],body=st.body.trim();if(!body){alert('正文不能为空');return}if(!st.date){alert('请选择日期');return}
   try{const r=diaryNorm(await q(sb.from('diary_entries').update({entry_date:st.date,body,is_public:st.pub}).eq('id',e.id).select().single()));
-    D.diary=D.diary.map(x=>x.id===e.id?r:x);sortDiary();delete diaryEdit[e.id];renderDiary()}catch(err){fail(err)}
+    D.diary=D.diary.map(x=>x.id===e.id?r:x);delete diaryEdit[e.id];renderDiary()}catch(err){fail(err)}
 }
 async function delDiary(e){
   if(!confirm('确定删除这个方框？'))return;
   try{const d=await q(sb.from('diary_entries').delete().eq('id',e.id).select());if(!d.length)throw new Error('无权删除，或内容已被删除');
     D.diary=D.diary.filter(x=>x.id!==e.id);delete diaryEdit[e.id];diaryOpen.delete('e'+e.id);renderDiary()}catch(err){fail(err)}
 }
-async function reloadDiary(){await loadProfiles();D.diary=(await q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false}))).map(diaryNorm);renderDiary()}
-$('dadd').onclick=()=>{diaryDrafts.unshift(newDraft());renderDiary()};
+async function reloadDiary(){ // 已有方框的位置不变；别人新发的公开日记插在最前面（空白方框之后）
+  await loadProfiles();
+  const rows=(await q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false}))).map(diaryNorm);
+  const byId=new Map(rows.map(r=>[r.id,r])),kept=D.diary.filter(x=>x.draft||byId.has(x.id)).map(x=>x.draft?x:byId.get(x.id));
+  const known=new Set(kept.filter(x=>!x.draft).map(x=>x.id)),fresh=rows.filter(r=>!known.has(r.id));
+  let n=0;while(n<kept.length&&kept[n].draft)n++;
+  D.diary=[...kept.slice(0,n),...fresh,...kept.slice(n)];renderDiary();
+}
+$('dadd').onclick=()=>{D.diary.unshift(newDraft());renderDiary()};
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary()}
 $('sd').value=ymd(now);
