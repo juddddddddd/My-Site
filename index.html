@@ -559,7 +559,7 @@ function readBox(e){ // 已保存的方框
   l.append(h('span','tag',e.pub?'🌐 所有人可见':'🔒 仅自己可见'));
   const s=h('span','ctl');
   if(mine(e))s.append(xbtn(()=>{diaryEdit[e.id]={date:e.date,body:e.body,pub:e.pub};renderDiary()},'✎','编辑'));
-  if(admin)s.append(xbtn(()=>delDiary(e)));
+  if(mine(e)||admin)s.append(xbtn(()=>delDiary(e)));
   top.append(l,s);
   box.append(top,h('div','ph logtxt dbody'+(long&&!wide?' clamp':''),e.body));
   if(long||wide){const ex=h('button','btn ghost sm',wide?'收起':'扩展');ex.onclick=()=>toggleWide(key);box.append(ex)}
