@@ -48,6 +48,7 @@
     </div>
     <div class="card"><b id="seld"></b>
       <div class="send" style="margin:10px 0"><input id="ei" placeholder="添加日程占位"><button class="btn" id="ea">添加</button></div>
+      <select id="ev" style="margin-bottom:10px"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select>
       <div id="el" class="list"></div>
     </div>
   </section>
@@ -57,7 +58,8 @@
       <input id="cn" placeholder="倒数日名称">
       <input id="cdt" type="date">
       <button class="btn" id="cadd">添加</button>
-    </div></div>
+    </div>
+      <select id="cv" style="margin-top:8px"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select></div>
     <div id="cdl" style="display:grid;gap:10px"></div>
   </section>
 
@@ -162,7 +164,7 @@ const base=(()=>{try{return new URL(cfg.url.trim()).origin}catch(e){return (cfg.
 const sb=configured?supabase.createClient(base,cfg.key.trim()):null;
 const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
-const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b)=>({name:a,date:b}),event:(a,b)=>({title:a,date:b})};
+const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b,p)=>({name:a,date:b,is_public:!!p}),event:(a,b,p)=>({title:a,date:b,is_public:!!p})};
 const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
 const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':/limit reached/i.test(e.message)?'数量已达上限，请先删除旧的':e.message);
 const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
@@ -170,8 +172,8 @@ const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
 function norm(k,r){ // 统一成 {a,b,c} 结构
   const p=P[r.user_id]||{},o={id:r.id,kind:k,uid:r.user_id,owner:p.username||'未知用户',adm:!!p.is_admin,created:r.created_at,a:'',b:'',c:''};
   if(k==='board'||k==='chat')o.a=r.body;
-  else if(k==='countdown'){o.a=r.name;o.b=r.date}
-  else if(k==='event'){o.a=r.title;o.b=r.date}
+  else if(k==='countdown'){o.a=r.name;o.b=r.date;o.pub=!!r.is_public}
+  else if(k==='event'){o.a=r.title;o.b=r.date;o.pub=!!r.is_public}
   else{o.a=r.mood;o.b=r.date;o.c=r.note||''}
   return o;
 }
@@ -196,8 +198,8 @@ async function load(){
   ensureDraft();
   renderAll();syncStatus();
 }
-async function add(kind,a,b=''){
-  const it=norm(kind,await q(sb.from(TB[kind][0]).insert(ROW[kind](a,b)).select().single()));
+async function add(kind,a,b='',pub=false){
+  const it=norm(kind,await q(sb.from(TB[kind][0]).insert(ROW[kind](a,b,pub)).select().single()));
   if(!D[kind].some(x=>x.id===it.id))D[kind].push(it);
 }
 async function del(it){ // RLS 决定能否删除：本人或管理员
@@ -310,12 +312,12 @@ function renderCal(){
   const list=$('el');list.innerHTML='';
   const evs=D.event.filter(e=>e.b===ymd(sel));
   if(!evs.length)list.appendChild(h('div','ph','暂无日程占位'));
-  evs.forEach(e=>{const r=h('div','row'),t=h('span','',e.a);t.append(h('span','ph',who(e)));r.append(t,ctl(e));list.appendChild(r)});
+  evs.forEach(e=>{const r=h('div','row'),t=h('span','',e.a);t.append(h('span','ph',who(e)),h('span','tag',e.pub?'🌐 所有人可见':'🔒 仅自己可见'));r.append(t,ctl(e));list.appendChild(r)});
 }
 $('pm').onclick=()=>{m--;if(m<0){m=11;y--}renderCal()};
 $('nm').onclick=()=>{m++;if(m>11){m=0;y++}renderCal()};
 async function addEvent(){const v=$('ei').value.trim();if(!v)return;
-  try{await add('event',v,ymd(sel));$('ei').value='';renderCal()}catch(e){fail(e)}}
+  try{await add('event',v,ymd(sel),$('ev').value==='1');$('ei').value='';renderCal()}catch(e){fail(e)}}
 $('ea').onclick=addEvent;$('ei').onkeydown=e=>{if(e.key==='Enter')addEvent()};
 
 /* ---- countdown ---- */
@@ -326,7 +328,7 @@ function renderCd(){
   const arr=D.countdown.map(c=>{const [a,b,d]=c.b.split('-').map(Number);return {c,d:new Date(a,b-1,d)}}).sort((p,q)=>p.d-q.d);
   arr.forEach(({c,d})=>{
     const diff=Math.round((d-t0)/day),el=h('div','card cd'),l=h('div');
-    l.append(h('b','',c.a),h('div','ph',d.toLocaleDateString('zh-CN')+who(c)));
+    const sub=h('div','ph',d.toLocaleDateString('zh-CN')+who(c));sub.append(h('span','tag',c.pub?'🌐 所有人可见':'🔒 仅自己可见'));l.append(h('b','',c.a),sub);
     const r=h('div','n');r.append(Math.abs(diff).toString(),h('small','',diff>=0?'天后':'天前'));
     const w=h('div','cdr');w.append(r,ctl(c));
     el.append(l,w);box.appendChild(el);
@@ -334,7 +336,7 @@ function renderCd(){
 }
 $('cadd').onclick=async()=>{
   const v=$('cdt').value;if(!v)return;
-  try{await add('countdown',$('cn').value.trim()||'倒数日名称占位',v);$('cn').value='';$('cdt').value='';renderCd()}catch(e){fail(e)}
+  try{await add('countdown',$('cn').value.trim()||'倒数日名称占位',v,$('cv').value==='1');$('cn').value='';$('cdt').value='';renderCd()}catch(e){fail(e)}
 };
 
 /* ---- board（所有人共用） ---- */
