@@ -47,7 +47,8 @@
       <div class="cal" id="cal" style="margin-top:12px"></div>
     </div>
     <div class="card"><b id="seld"></b>
-      <div class="send" style="margin:10px 0"><input id="ei" placeholder="添加日程占位"><button class="btn" id="ea">添加</button></div>
+      <input id="et" placeholder="标题（选填，会显示在日历上）" maxlength="20" style="margin:10px 0 0">
+      <div class="send" style="margin:8px 0"><input id="ei" placeholder="添加日程占位"><button class="btn" id="ea">添加</button><button class="btn ghost hidden" id="ec">取消</button></div>
       <select id="ev" style="margin-bottom:10px"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select>
       <div id="el" class="list"></div>
     </div>
@@ -164,7 +165,7 @@ const base=(()=>{try{return new URL(cfg.url.trim()).origin}catch(e){return (cfg.
 const sb=configured?supabase.createClient(base,cfg.key.trim()):null;
 const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
-const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b,p)=>({name:a,date:b,is_public:!!p}),event:(a,b,p)=>({title:a,date:b,is_public:!!p})};
+const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b,p)=>({name:a,date:b,is_public:!!p}),event:(a,b,p,hd)=>({title:a,date:b,is_public:!!p,heading:hd||''})};
 const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
 const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':/limit reached/i.test(e.message)?'数量已达上限，请先删除旧的':e.message);
 const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
@@ -173,7 +174,7 @@ function norm(k,r){ // 统一成 {a,b,c} 结构
   const p=P[r.user_id]||{},o={id:r.id,kind:k,uid:r.user_id,owner:p.username||'未知用户',adm:!!p.is_admin,created:r.created_at,a:'',b:'',c:''};
   if(k==='board'||k==='chat')o.a=r.body;
   else if(k==='countdown'){o.a=r.name;o.b=r.date;o.pub=!!r.is_public}
-  else if(k==='event'){o.a=r.title;o.b=r.date;o.pub=!!r.is_public}
+  else if(k==='event'){o.a=r.title;o.b=r.date;o.pub=!!r.is_public;o.head=r.heading||''}
   else{o.a=r.mood;o.b=r.date;o.c=r.note||''}
   return o;
 }
@@ -198,8 +199,8 @@ async function load(){
   ensureDraft();
   renderAll();syncStatus();
 }
-async function add(kind,a,b='',pub=false){
-  const it=norm(kind,await q(sb.from(TB[kind][0]).insert(ROW[kind](a,b,pub)).select().single()));
+async function add(kind,a,b='',pub=false,extra=''){
+  const it=norm(kind,await q(sb.from(TB[kind][0]).insert(ROW[kind](a,b,pub,extra)).select().single()));
   if(!D[kind].some(x=>x.id===it.id))D[kind].push(it);
 }
 async function del(it){ // RLS 决定能否删除：本人或管理员
@@ -212,9 +213,9 @@ async function edit(it){ // 仅本人
   await q(sb.from(TB[it.kind][0]).update({[TB[it.kind][1]]:v.trim()}).eq('id',it.id).select().single());
   D[it.kind].find(x=>x.id===it.id).a=v.trim();
 }
-function ctl(it,canEdit=true){
+function ctl(it,canEdit=true,onEdit=null){
   const s=h('span','ctl');
-  if(canEdit&&mine(it))s.appendChild(xbtn(()=>act(edit(it)),'✎','编辑'));
+  if(canEdit&&mine(it))s.appendChild(xbtn(()=>onEdit?onEdit():act(edit(it)),'✎','编辑'));
   if(mine(it)||admin)s.appendChild(xbtn(()=>act(del(it))));
   return s;
 }
@@ -267,7 +268,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();resetLogForm();closeReason();closeHome();resetDiary();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -302,23 +303,43 @@ function renderCal(){
   const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();
   for(let i=0;i<first;i++)c.appendChild(document.createElement('span'));
   for(let d=1;d<=days;d++){
-    const b=h('button','',d),dt=new Date(y,m,d);
+    const dt=new Date(y,m,d),evs=D.event.filter(e=>e.b===ymd(dt)),tl=evs.filter(e=>e.head),b=h('button','');
+    b.append(h('span','dn',d));
+    tl.slice(0,2).forEach(e=>b.append(h('span','et',e.head))); // 有标题的日程：标题显示在日历格子里（最多 2 个）
+    if(tl.length>2)b.append(h('span','et','+'+(tl.length-2)));
     if(dt.toDateString()===now.toDateString())b.classList.add('today');
     if(dt.toDateString()===sel.toDateString())b.classList.add('sel');
-    if(D.event.some(e=>e.b===ymd(dt)))b.classList.add('has');
-    b.onclick=()=>{sel=dt;renderCal()};c.appendChild(b);
+    if(evs.length&&!tl.length)b.classList.add('has'); // 只有没标题的日程：显示小圆点
+    b.onclick=()=>{sel=dt;resetEventForm();renderCal()};c.appendChild(b);
   }
   $('seld').textContent=sel.getFullYear()+' 年 '+(sel.getMonth()+1)+' 月 '+sel.getDate()+' 日';
   const list=$('el');list.innerHTML='';
   const evs=D.event.filter(e=>e.b===ymd(sel));
   if(!evs.length)list.appendChild(h('div','ph','暂无日程占位'));
-  evs.forEach(e=>{const r=h('div','row'),t=h('span','',e.a);t.append(h('span','ph',who(e)),h('span','tag',e.pub?'🌐 所有人可见':'🔒 仅自己可见'));r.append(t,ctl(e));list.appendChild(r)});
+  evs.forEach(e=>{
+    const r=h('div','row'),t=h('span','');
+    if(e.head)t.append(h('b','',e.head));
+    if(e.head&&e.a)t.append(h('br'));
+    if(e.a)t.append(document.createTextNode(e.a));
+    t.append(h('span','ph',who(e)),h('span','tag',e.pub?'🌐 所有人可见':'🔒 仅自己可见'));
+    r.append(t,ctl(e,true,()=>startEventEdit(e)));list.appendChild(r);
+  });
 }
 $('pm').onclick=()=>{m--;if(m<0){m=11;y--}renderCal()};
 $('nm').onclick=()=>{m++;if(m>11){m=0;y++}renderCal()};
-async function addEvent(){const v=$('ei').value.trim();if(!v)return;
-  try{await add('event',v,ymd(sel),$('ev').value==='1');$('ei').value='';renderCal()}catch(e){fail(e)}}
-$('ea').onclick=addEvent;$('ei').onkeydown=e=>{if(e.key==='Enter')addEvent()};
+let evEdit=null; // 正在编辑的日程 id（null = 新建）
+function resetEventForm(){evEdit=null;$('et').value='';$('ei').value='';$('ea').textContent='添加';$('ec').classList.add('hidden')}
+function startEventEdit(e){evEdit=e.id;$('et').value=e.head||'';$('ei').value=e.a;$('ev').value=e.pub?'1':'0';$('ea').textContent='保存修改';$('ec').classList.remove('hidden');$('et').focus?.()}
+async function saveEvent(){
+  const v=$('ei').value.trim(),hd=$('et').value.trim(),pub=$('ev').value==='1';
+  if(!v&&!hd)return; // 标题和内容至少填一个
+  try{
+    if(evEdit){const r=norm('event',await q(sb.from('events').update({title:v,heading:hd,is_public:pub}).eq('id',evEdit).select().single()));D.event=D.event.map(x=>x.id===r.id?r:x)}
+    else await add('event',v,ymd(sel),pub,hd);
+    resetEventForm();renderCal();
+  }catch(e){fail(e)}
+}
+$('ea').onclick=saveEvent;$('ec').onclick=resetEventForm;$('ei').onkeydown=$('et').onkeydown=e=>{if(e.key==='Enter')saveEvent()};
 
 /* ---- countdown ---- */
 const day=86400000,t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
