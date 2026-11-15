@@ -230,6 +230,7 @@ function subscribe(){
       if(!P[r.user_id])await loadProfiles().catch(()=>{});
       if(D.chat.some(x=>x.id===r.id))return;
       D.chat.push(norm('chat',r));renderChat();
+      if(r.user_id!==uid&&curPage!=='chat'){unread.add('chat');renderDots()} // 别人发的新消息：立刻亮红点
     }else if(p.eventType==='DELETE'){D.chat=D.chat.filter(x=>x.id!==p.old.id);renderChat()}
   }).subscribe();
 }
@@ -246,7 +247,7 @@ function mode(r){reg=r;$('lt').textContent=r?'创建账号':'欢迎回来';$('go
   $('sw').textContent=r?'已有账号？去登录':'没有账号？去注册';$('p').autocomplete=r?'new-password':'current-password';$('err').textContent=''}
 async function enter(){
   const {data:{session}}=await sb.auth.getSession();if(!session)return;
-  uid=session.user.id;await load();subscribe();show();
+  uid=session.user.id;await load();subscribe();show();startDots();
 }
 async function login(){
   const em=$('em').value.trim(),p=$('p').value,u=$('u').value.trim();
@@ -268,7 +269,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -282,10 +283,7 @@ function go(t){
   document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));
   let main=false;navBtns.forEach(b=>{const on=b.dataset.t===t;b.classList.toggle('on',on);if(on)main=true});
   $('more').classList.toggle('on',!main);
-  if(t==='board'&&uid)reloadBoard().catch(()=>{}); // 打开留言板时刷新，看到别人的新留言
-  if(t==='log'&&uid)reloadLog().catch(()=>{});
-  if(t==='home'&&uid)reloadHome().catch(()=>{});
-  if(t==='diary'&&uid)reloadDiary().catch(()=>{});
+  curPage=t;if(uid)openPage(t); // 打开页面：刷新内容，并把这个页面标记为已读（红点消失）
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -623,6 +621,41 @@ async function reloadDiary(){ // 已有方框的位置不变；别人新发的�
   D.diary=[...kept.slice(0,n),...fresh,...kept.slice(n)];renderDiary();
 }
 $('dadd').onclick=()=>{D.diary.unshift(newDraft());renderDiary()};
+
+/* ---- 消息提示（小红点）：每个用户各自记录每个页面「上次看到什么时候」 ---- */
+let curPage='home',unread=new Set(),dotTimer=null;
+const DRAWER_PAGES=['board','diary','status','log'],ALWAYS=new Set(['home','board','log','diary']); // ALWAYS：这几页每次打开都刷新
+function renderDots(){
+  document.querySelectorAll('nav button[data-t],.ditem[data-t]').forEach(b=>b.classList.toggle('hasdot',unread.has(b.dataset.t)));
+  $('more').classList.toggle('hasdot',DRAWER_PAGES.some(p=>unread.has(p))); // 「更多」里有页面有新内容时，「更多」也亮红点
+}
+async function reloadEvents(){await loadProfiles();D.event=(await q(sb.from('events').select('*'))).map(r=>norm('event',r));renderCal()}
+async function reloadCountdowns(){await loadProfiles();D.countdown=(await q(sb.from('countdowns').select('*'))).map(r=>norm('countdown',r));renderCd()}
+async function reloadStatuses(){await loadProfiles();D.status=(await q(sb.from('statuses').select('*'))).map(r=>norm('status',r));renderStatus()}
+async function reloadChat(){await loadProfiles();D.chat=(await q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200))).reverse().map(r=>norm('chat',r));renderChat()}
+const RELOAD={home:reloadHome,board:reloadBoard,log:reloadLog,diary:reloadDiary,calendar:reloadEvents,countdown:reloadCountdowns,status:reloadStatuses,chat:reloadChat};
+async function markSeen(p){unread.delete(p);renderDots();try{await q(sb.rpc('mark_seen',{p}))}catch(e){}}
+async function openPage(p){
+  if(!uid)return;
+  if(ALWAYS.has(p)||unread.has(p)){try{await RELOAD[p]()}catch(e){return}} // 有新内容的页面，先刷新再标记已读
+  await markSeen(p);
+}
+async function pollDots(){
+  if(!uid)return;
+  try{
+    unread=new Set((await q(sb.rpc('unread_pages'))).map(r=>r.page));
+    if(unread.has(curPage))await openPage(curPage); // 正在看的页面有新内容：直接刷新并标记已读，不亮红点
+    renderDots();
+  }catch(e){}
+}
+async function startDots(){
+  try{await q(sb.rpc('seed_seen'))}catch(e){}
+  go('home'); // 登录后停在主页
+  await pollDots();
+  clearInterval(dotTimer);dotTimer=setInterval(pollDots,30000); // 页面开着时每 30 秒查一次
+}
+function stopDots(){clearInterval(dotTimer);dotTimer=null;unread=new Set();renderDots()}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&uid)pollDots()});
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary()}
 $('sd').value=ymd(now);
