@@ -78,16 +78,22 @@
 
   <section id="status">
     <div class="card">
-      <b>今日状态</b>
-      <div class="ph">选择一个状态占位</div>
-      <div class="moods" id="moods">
-        <button data-m="😊">😊<span>状态占位</span></button>
-        <button data-m="😐">😐<span>状态占位</span></button>
-        <button data-m="😴">😴<span>状态占位</span></button>
-        <button data-m="🔥">🔥<span>状态占位</span></button>
-      </div>
-      <input id="note" placeholder="一句话备注占位" style="margin-top:12px">
-      <div class="addrow" style="margin-top:10px;grid-template-columns:1fr auto"><input id="sd" type="date"><button class="btn" id="ss">保存</button></div>
+      <b>发布状态</b>
+      <div class="dtop" style="margin-top:10px"><input id="sd" type="date"><select id="sv"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select></div>
+      <input id="note" placeholder="一句话备注（选填）" maxlength="100" style="margin-top:8px">
+      <div class="ph" id="shint" style="margin-top:6px"></div>
+      <div class="ph" style="margin:10px 0 0">点一个预设状态，直接发布</div>
+      <div class="moods" id="presets"></div>
+      <div class="ph" style="margin:14px 0 6px">或者自定义状态</div>
+      <div class="addrow" style="grid-template-columns:1fr 1fr"><input id="scl" placeholder="自定义状态名称" maxlength="20"><input id="sci" placeholder="图标（选填）" maxlength="8"></div>
+      <div class="emojis" id="emj"></div>
+      <button class="btn" id="scb">发布自定义状态</button>
+    </div>
+    <div class="card hidden" id="pmgr">
+      <b>管理预设状态</b> <span class="ph">（仅管理员）</span>
+      <div id="pml" class="list" style="margin:10px 0"></div>
+      <div class="addrow" style="grid-template-columns:90px 1fr"><input id="pmi" placeholder="图标" maxlength="8"><input id="pmn" placeholder="状态名称" maxlength="20"></div>
+      <div class="send" style="margin-top:10px"><button class="btn" id="pms">添加预设</button><button class="btn ghost hidden" id="pmc">取消</button></div>
     </div>
     <div id="sl" class="list"></div>
   </section>
@@ -153,7 +159,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[],diary:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[],diary:[],preset:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
@@ -175,7 +181,7 @@ function norm(k,r){ // 统一成 {a,b,c} 结构
   if(k==='board'||k==='chat')o.a=r.body;
   else if(k==='countdown'){o.a=r.name;o.b=r.date;o.pub=!!r.is_public}
   else if(k==='event'){o.a=r.title;o.b=r.date;o.pub=!!r.is_public;o.head=r.heading||''}
-  else{o.a=r.mood;o.b=r.date;o.c=r.note||''}
+  else{o.a=r.label;o.icon=r.icon||'';o.b=r.date;o.c=r.note||'';o.pub=!!r.is_public}
   return o;
 }
 async function loadProfiles(){const d=await q(sb.from('profiles').select('id,username,is_admin'));P={};d.forEach(p=>P[p.id]=p)}
@@ -183,7 +189,7 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m,lg,pl,rq,hm,dr]=await Promise.all([
+  const [b,c,e,s,m,lg,pl,rq,hm,dr,pr]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
@@ -193,9 +199,10 @@ async function load(){
     q(sb.from('planned_updates').select('*').order('created_at')),
     q(sb.from('update_requests').select('*')),
     q(sb.from('home_blocks').select('*').order('created_at')),
-    q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false}))]);
+    q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false})),
+    q(sb.from('status_presets').select('*').order('sort_order').order('id'))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm,diary:dr.map(diaryNorm)};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm,diary:dr.map(diaryNorm),preset:pr};
   ensureDraft();
   renderAll();syncStatus();
 }
@@ -269,7 +276,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -390,30 +397,69 @@ async function send(){const v=$('mi').value.trim();if(!v)return;
   try{await add('chat',v);$('mi').value='';renderChat()}catch(e){fail(e)}}
 $('ms').onclick=send;$('mi').onkeydown=e=>{if(e.key==='Enter')send()};
 
-/* ---- 今日状态（按日期记录） ---- */
+/* ---- 今日状态（按日期发布；可选仅自己/所有人可见；预设状态由管理员维护，自定义状态不保存为预设） ---- */
+const sortPresets=()=>D.preset.sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
+function renderPresets(){
+  const box=$('presets');box.innerHTML='';
+  if(!D.preset.length)box.appendChild(h('div','ph','暂无预设状态占位'));
+  D.preset.forEach(p=>{
+    const b=h('button','');b.append(document.createTextNode(p.icon||'🏷️'),h('span','',p.label));
+    b.title='直接发布「'+p.label+'」';b.onclick=()=>publishStatus(p.label,p.icon);box.appendChild(b);
+  });
+  $('pmgr').classList.toggle('hidden',!admin); // 管理预设：仅管理员
+  const pl=$('pml');pl.innerHTML='';
+  D.preset.forEach(p=>{
+    const r=h('div','row sep');r.append(h('span','',(p.icon||'🏷️')+' '+p.label));
+    const s=h('span','ctl');s.append(xbtn(()=>startPresetEdit(p),'✎','编辑'),xbtn(()=>delPreset(p)));r.append(s);pl.appendChild(r);
+  });
+}
 function renderStatus(){
+  renderPresets();
   const box=$('sl');box.innerHTML='';
   if(!D.status.length)box.appendChild(h('div','ph','暂无状态记录占位'));
   D.status.slice().sort((p,q)=>q.b.localeCompare(p.b)||q.id-p.id).forEach(s=>{
     const c=h('div','card row'),l=h('div');
-    l.append(h('b','',s.b+'  '+s.a),h('span','ph',who(s)),h('div','ph',s.c||'备注占位'));
+    l.append(h('b','',s.b+'  '+(s.icon?s.icon+' ':'')+s.a),h('span','ph',who(s)),h('span','tag',s.pub?'🌐 所有人可见':'🔒 仅自己可见'),h('div','ph',s.c||'备注占位'));
     c.append(l,ctl(s,false));box.appendChild(c);
   });
 }
-function syncStatus(){ // 按所选日期，把自己的状态载入编辑区
+function syncStatus(){ // 提示：所选日期是否已有自己的状态（再次发布会覆盖）
   const s=D.status.find(x=>mine(x)&&x.b===$('sd').value);
-  mood=s?s.a:null;$('note').value=s?s.c:'';
-  document.querySelectorAll('#moods button').forEach(b=>b.classList.toggle('on',b.dataset.m===mood));
+  $('shint').textContent=s?'这一天你已有状态「'+(s.icon?s.icon+' ':'')+s.a+'」，再次发布会覆盖它。':'';
 }
-document.querySelectorAll('#moods button').forEach(b=>b.onclick=()=>{
-  mood=b.dataset.m;document.querySelectorAll('#moods button').forEach(x=>x.classList.toggle('on',x===b));
-});
+async function publishStatus(label,icon){ // 预设：点击即发布；自定义：填名称后发布。每人每天一条，重复发布即覆盖
+  const date=$('sd').value;
+  if(!date){alert('请选择日期');return false}
+  if(!label){alert('请填写状态名称');return false}
+  try{
+    const r=await q(sb.from('statuses').upsert({user_id:uid,date,label,icon:icon||'',note:$('note').value.trim(),is_public:$('sv').value==='1'},{onConflict:'user_id,date'}).select().single());
+    const it=norm('status',r);D.status=D.status.filter(x=>x.id!==it.id);D.status.push(it);
+    $('note').value='';renderStatus();syncStatus();return true;
+  }catch(e){fail(e);return false}
+}
 $('sd').onchange=syncStatus;
-$('ss').onclick=async()=>{
-  const date=$('sd').value;if(!date||!mood){alert('请选择日期和状态');return}
-  try{const r=await q(sb.from('statuses').upsert({user_id:uid,date,mood,note:$('note').value.trim()},{onConflict:'user_id,date'}).select().single());
-    const it=norm('status',r);D.status=D.status.filter(x=>x.id!==it.id);D.status.push(it);renderStatus()}catch(e){fail(e)}
-};
+const QUICK=['😊','😌','🤯','💼','😴','🛋️','🍚','🎧','☕','📚','🏃','🎮','🌧️','🎉','🤒','❤️'];
+QUICK.forEach(e=>{const b=h('button','',e);b.title='使用这个图标';b.onclick=()=>{$('sci').value=e};$('emj').appendChild(b)});
+$('scb').onclick=async()=>{if(await publishStatus($('scl').value.trim(),$('sci').value.trim())){$('scl').value='';$('sci').value=''}};
+// 管理预设（仅管理员；数据库规则也只允许管理员写）
+let presetEdit=null;
+function resetPresetForm(){presetEdit=null;$('pmi').value='';$('pmn').value='';$('pms').textContent='添加预设';$('pmc').classList.add('hidden')}
+function startPresetEdit(p){presetEdit=p.id;$('pmi').value=p.icon||'';$('pmn').value=p.label;$('pms').textContent='保存修改';$('pmc').classList.remove('hidden');$('pmn').focus?.()}
+async function savePreset(){
+  const icon=$('pmi').value.trim(),label=$('pmn').value.trim();
+  if(!label){alert('请填写状态名称');return}
+  try{
+    if(presetEdit){const r=await q(sb.from('status_presets').update({label,icon}).eq('id',presetEdit).select().single());D.preset=D.preset.map(x=>x.id===r.id?r:x)}
+    else{const next=Math.max(0,...D.preset.map(x=>x.sort_order))+1;D.preset.push(await q(sb.from('status_presets').insert({label,icon,sort_order:next}).select().single()))}
+    resetPresetForm();sortPresets();renderStatus();
+  }catch(e){fail(e)}
+}
+async function delPreset(p){
+  if(!confirm('确定删除预设状态「'+p.label+'」？已经发布的状态不受影响。'))return;
+  try{const d=await q(sb.from('status_presets').delete().eq('id',p.id).select());if(!d.length)throw new Error('无权删除，或已被删除');
+    D.preset=D.preset.filter(x=>x.id!==p.id);if(presetEdit===p.id)resetPresetForm();renderStatus()}catch(e){fail(e)}
+}
+$('pms').onclick=savePreset;$('pmc').onclick=resetPresetForm;$('pmn').onkeydown=e=>{if(e.key==='Enter')savePreset()};
 
 /* ---- 更新日志（所有人可看，仅管理员可编辑） ---- */
 let logEdit=null;
@@ -631,7 +677,7 @@ function renderDots(){
 }
 async function reloadEvents(){await loadProfiles();D.event=(await q(sb.from('events').select('*'))).map(r=>norm('event',r));renderCal()}
 async function reloadCountdowns(){await loadProfiles();D.countdown=(await q(sb.from('countdowns').select('*'))).map(r=>norm('countdown',r));renderCd()}
-async function reloadStatuses(){await loadProfiles();D.status=(await q(sb.from('statuses').select('*'))).map(r=>norm('status',r));renderStatus()}
+async function reloadStatuses(){await loadProfiles();D.status=(await q(sb.from('statuses').select('*'))).map(r=>norm('status',r));D.preset=await q(sb.from('status_presets').select('*').order('sort_order').order('id'));renderStatus()}
 async function reloadChat(){await loadProfiles();D.chat=(await q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200))).reverse().map(r=>norm('chat',r));renderChat()}
 const RELOAD={home:reloadHome,board:reloadBoard,log:reloadLog,diary:reloadDiary,calendar:reloadEvents,countdown:reloadCountdowns,status:reloadStatuses,chat:reloadChat};
 async function markSeen(p){unread.delete(p);renderDots();try{await q(sb.rpc('mark_seen',{p}))}catch(e){}}
