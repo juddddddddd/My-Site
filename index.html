@@ -81,7 +81,6 @@
       <b>发布状态</b>
       <div class="dtop" style="margin-top:10px"><input id="sd" type="date"><select id="sv"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select></div>
       <input id="note" placeholder="一句话备注（选填）" maxlength="100" style="margin-top:8px">
-      <div class="ph" id="shint" style="margin-top:6px"></div>
       <div class="ph" style="margin:10px 0 0">点一个预设状态，直接发布</div>
       <div class="moods" id="presets"></div>
       <div class="ph" style="margin:14px 0 6px">或者自定义状态</div>
@@ -423,21 +422,20 @@ function renderStatus(){
     c.append(l,ctl(s,false));box.appendChild(c);
   });
 }
-function syncStatus(){ // 提示：所选日期是否已有自己的状态（再次发布会覆盖）
-  const s=D.status.find(x=>mine(x)&&x.b===$('sd').value);
-  $('shint').textContent=s?'这一天你已有状态「'+(s.icon?s.icon+' ':'')+s.a+'」，再次发布会覆盖它。':'';
-}
-async function publishStatus(label,icon){ // 预设：点击即发布；自定义：填名称后发布。每人每天一条，重复发布即覆盖
+function syncStatus(){} // 保留给登录/退出时调用；同一天可发布多条，不再需要「覆盖」提示
+let publishing=false; // 防止连点重复发布
+async function publishStatus(label,icon){ // 预设：点击即发布；自定义：填名称后发布。同一天可以发布多条
+  if(publishing)return false;
   const date=$('sd').value;
   if(!date){alert('请选择日期');return false}
   if(!label){alert('请填写状态名称');return false}
+  publishing=true;
   try{
-    const r=await q(sb.from('statuses').upsert({user_id:uid,date,label,icon:icon||'',note:$('note').value.trim(),is_public:$('sv').value==='1'},{onConflict:'user_id,date'}).select().single());
-    const it=norm('status',r);D.status=D.status.filter(x=>x.id!==it.id);D.status.push(it);
-    $('note').value='';renderStatus();syncStatus();return true;
-  }catch(e){fail(e);return false}
+    D.status.push(norm('status',await q(sb.from('statuses').insert({date,label,icon:icon||'',note:$('note').value.trim(),is_public:$('sv').value==='1'}).select().single())));
+    $('note').value='';renderStatus();return true;
+  }catch(e){fail(/status limit reached/i.test(e.message)?new Error('这一天你发布的状态已达 20 条上限，请先删除一些'):e);return false}
+  finally{publishing=false}
 }
-$('sd').onchange=syncStatus;
 const QUICK=['😊','😌','🤯','💼','😴','🛋️','🍚','🎧','☕','📚','🏃','🎮','🌧️','🎉','🤒','❤️'];
 QUICK.forEach(e=>{const b=h('button','',e);b.title='使用这个图标';b.onclick=()=>{$('sci').value=e};$('emj').appendChild(b)});
 $('scb').onclick=async()=>{if(await publishStatus($('scl').value.trim(),$('sci').value.trim())){$('scl').value='';$('sci').value=''}};
