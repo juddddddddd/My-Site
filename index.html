@@ -80,13 +80,14 @@
     <div class="card">
       <b>发布状态</b>
       <div class="dtop" style="margin-top:10px"><input id="sd" type="date"><select id="sv"><option value="0">🔒 仅自己可见</option><option value="1">🌐 所有人可见</option></select></div>
-      <input id="note" placeholder="一句话备注（选填）" maxlength="100" style="margin-top:8px">
-      <div class="ph" style="margin:10px 0 0">点一个预设状态，直接发布</div>
+      <div class="ph" style="margin:10px 0 0">先点选一个预设状态（点「发布」后才会发布）</div>
       <div class="moods" id="presets"></div>
       <div class="ph" style="margin:14px 0 6px">或者自定义状态</div>
       <div class="addrow" style="grid-template-columns:1fr 1fr"><input id="scl" placeholder="自定义状态名称" maxlength="20"><input id="sci" placeholder="图标（选填）" maxlength="8"></div>
       <div class="emojis" id="emj"></div>
-      <button class="btn" id="scb">发布自定义状态</button>
+      <input id="note" placeholder="一句话备注（选填）" maxlength="100">
+      <div class="ph" id="ssel" style="margin:10px 0 8px"></div>
+      <button class="btn" id="sp">发布</button>
     </div>
     <div class="card hidden" id="pmgr">
       <b>管理预设状态</b> <span class="ph">（仅管理员）</span>
@@ -275,7 +276,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();resetStatusForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -400,10 +401,11 @@ $('ms').onclick=send;$('mi').onkeydown=e=>{if(e.key==='Enter')send()};
 const sortPresets=()=>D.preset.sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
 function renderPresets(){
   const box=$('presets');box.innerHTML='';
+  if(selPreset!==null&&!D.preset.some(x=>x.id===selPreset))selPreset=null; // 选中的预设被管理员删除了
   if(!D.preset.length)box.appendChild(h('div','ph','暂无预设状态占位'));
   D.preset.forEach(p=>{
-    const b=h('button','');b.append(document.createTextNode(p.icon||'🏷️'),h('span','',p.label));
-    b.title='直接发布「'+p.label+'」';b.onclick=()=>publishStatus(p.label,p.icon);box.appendChild(b);
+    const b=h('button',selPreset===p.id?'on':'');b.append(document.createTextNode(p.icon||'🏷️'),h('span','',p.label));
+    b.title='选中「'+p.label+'」';b.onclick=()=>choosePreset(p);box.appendChild(b);
   });
   $('pmgr').classList.toggle('hidden',!admin); // 管理预设：仅管理员
   const pl=$('pml');pl.innerHTML='';
@@ -413,7 +415,7 @@ function renderPresets(){
   });
 }
 function renderStatus(){
-  renderPresets();
+  renderPresets();updateSel();
   const box=$('sl');box.innerHTML='';
   if(!D.status.length)box.appendChild(h('div','ph','暂无状态记录占位'));
   D.status.slice().sort((p,q)=>q.b.localeCompare(p.b)||q.id-p.id).forEach(s=>{
@@ -423,6 +425,18 @@ function renderStatus(){
   });
 }
 function syncStatus(){} // 保留给登录/退出时调用；同一天可发布多条，不再需要「覆盖」提示
+// 选择 → 再点「发布」才发布。预设和自定义二选一：点预设会清空自定义内容，填自定义内容会取消预设的选中。
+let selPreset=null;
+function selInfo(){ // 当前准备发布的状态
+  const p=D.preset.find(x=>x.id===selPreset);
+  if(p)return {label:p.label,icon:p.icon,kind:'预设'};
+  const label=$('scl').value.trim();
+  return label?{label,icon:$('sci').value.trim(),kind:'自定义'}:null;
+}
+function updateSel(){const s=selInfo();$('ssel').textContent=s?'已选择（'+s.kind+'）：'+(s.icon?s.icon+' ':'')+s.label:'还没有选择状态：请点选一个预设状态，或填写自定义状态名称'}
+function choosePreset(p){selPreset=selPreset===p.id?null:p.id;if(selPreset!==null){$('scl').value='';$('sci').value=''}renderPresets();updateSel()} // 再点一次取消选中
+function customTouched(){if($('scl').value||$('sci').value){selPreset=null;renderPresets()}updateSel()}
+function resetStatusForm(){selPreset=null;$('scl').value='';$('sci').value='';$('note').value=''}
 let publishing=false; // 防止连点重复发布
 async function publishStatus(label,icon){ // 预设：点击即发布；自定义：填名称后发布。同一天可以发布多条
   if(publishing)return false;
@@ -437,8 +451,13 @@ async function publishStatus(label,icon){ // 预设：点击即发布；自定�
   finally{publishing=false}
 }
 const QUICK=['😊','😌','🤯','💼','😴','🛋️','🍚','🎧','☕','📚','🏃','🎮','🌧️','🎉','🤒','❤️'];
-QUICK.forEach(e=>{const b=h('button','',e);b.title='使用这个图标';b.onclick=()=>{$('sci').value=e};$('emj').appendChild(b)});
-$('scb').onclick=async()=>{if(await publishStatus($('scl').value.trim(),$('sci').value.trim())){$('scl').value='';$('sci').value=''}};
+QUICK.forEach(e=>{const b=h('button','',e);b.title='使用这个图标';b.onclick=()=>{$('sci').value=e;customTouched()};$('emj').appendChild(b)});
+$('scl').oninput=$('sci').oninput=customTouched;
+$('sp').onclick=async()=>{
+  const s=selInfo();
+  if(!s){alert('请先选择一个预设状态，或填写自定义状态名称');return}
+  if(await publishStatus(s.label,s.icon)){selPreset=null;$('scl').value='';$('sci').value='';renderPresets();updateSel()} // 发布后清空选择（备注在 publishStatus 里清空）
+};
 // 管理预设（仅管理员；数据库规则也只允许管理员写）
 let presetEdit=null;
 function resetPresetForm(){presetEdit=null;$('pmi').value='';$('pmn').value='';$('pms').textContent='添加预设';$('pmc').classList.add('hidden')}
