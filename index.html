@@ -134,6 +134,24 @@
     <div class="dgrid" id="dg"></div>
   </section>
 
+  <section id="clock">
+    <div class="card clk local" id="clk-local">
+      <div class="ph">本地时间 · <span id="clk-tz"></span></div>
+      <div class="big" id="clk-lt"></div>
+      <div class="ph" id="clk-ld"></div>
+    </div>
+    <div class="grid2" id="clk-grid"></div>
+    <div class="ph">所有时钟用同一个时间点同步刷新。时间来自你设备的系统时钟，已自动处理夏令时。</div>
+    <div class="card hidden" id="ctm">
+      <b>管理城市</b> <span class="ph">（仅管理员）</span>
+      <div id="ctlist" class="list" style="margin:10px 0"></div>
+      <div class="addrow" style="grid-template-columns:1fr 1fr"><input id="ctn" placeholder="城市名称" maxlength="20"><input id="ctz" placeholder="时区，如 Asia/Kolkata" list="tzlist" maxlength="64" autocomplete="off"></div>
+      <datalist id="tzlist"></datalist>
+      <div class="ph" id="cth" style="margin-top:6px"></div>
+      <div class="send" style="margin-top:10px"><button class="btn" id="cts">添加城市</button><button class="btn ghost hidden" id="ctc">取消</button></div>
+    </div>
+  </section>
+
   <div class="mask" id="mask"></div>
   <aside class="drawer" id="drawer" aria-label="更多选项">
     <div class="dh"><b>更多</b><button class="btn ghost" id="dclose">✕</button></div>
@@ -141,6 +159,7 @@
     <button class="ditem" data-t="status"><span class="ic">🌤️</span>今日状态</button>
     <button class="ditem" data-t="diary"><span class="ic">📔</span>日记</button>
     <button class="ditem" data-t="log"><span class="ic">📋</span>更新日志</button>
+    <button class="ditem" data-t="clock"><span class="ic">🌍</span>世界时钟</button>
   </aside>
 
   <nav><div class="in">
@@ -159,7 +178,7 @@ const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0'),ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function h(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function xbtn(fn,txt='✕',title='删除'){const b=h('button','x',txt);b.title=title;b.onclick=fn;return b}
-const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[],diary:[],preset:[]});
+const EMPTY=()=>({board:[],countdown:[],event:[],chat:[],status:[],log:[],plan:[],req:[],home:[],diary:[],preset:[],city:[]});
 let user=null,uid=null,admin=false,reg=false,mood=null,D=EMPTY(),P={},chan=null;
 const mine=it=>it.uid===uid, who=it=>mine(it)?'':' · '+it.owner;
 
@@ -173,7 +192,7 @@ const q=async p=>{const {data,error}=await p;if(error)throw error;return data};
 const TB={board:['board_posts','body'],countdown:['countdowns','name'],event:['events','title'],chat:['chat_messages','body']};
 const ROW={board:a=>({body:a}),chat:a=>({body:a}),countdown:(a,b,p)=>({name:a,date:b,is_public:!!p}),event:(a,b,p,hd)=>({title:a,date:b,is_public:!!p,heading:hd||''})};
 const ERR={'Invalid login credentials':'邮箱或密码错误','Email not confirmed':'邮箱尚未确认，请先点击邮件里的确认链接','User already registered':'该邮箱已注册'};
-const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':/limit reached/i.test(e.message)?'数量已达上限，请先删除旧的':e.message);
+const msg=e=>ERR[e.message]||(/check constraint/i.test(e.message)?'内容长度不符合要求':/Database error saving new user/i.test(e.message)?'注册失败：用户名可能已被占用或格式不对':/row-level security/i.test(e.message)?'操作被拒绝：没有权限，或已达数量上限':/limit reached/i.test(e.message)?'数量已达上限，请先删除旧的':/invalid time zone/i.test(e.message)?'时区无效（数据库不认识这个时区名称）':e.message);
 const fail=e=>alert(msg(e)), act=p=>p.then(renderAll).catch(fail);
 
 function norm(k,r){ // 统一成 {a,b,c} 结构
@@ -189,7 +208,7 @@ async function load(){
   await loadProfiles();
   if(!P[uid])throw new Error('账号资料缺失，请联系管理员');
   user=P[uid].username;admin=!!P[uid].is_admin;
-  const [b,c,e,s,m,lg,pl,rq,hm,dr,pr]=await Promise.all([
+  const [b,c,e,s,m,lg,pl,rq,hm,dr,pr,ct]=await Promise.all([
     q(sb.from('board_posts').select('*').order('created_at')),
     q(sb.from('countdowns').select('*')),
     q(sb.from('events').select('*')),
@@ -200,9 +219,10 @@ async function load(){
     q(sb.from('update_requests').select('*')),
     q(sb.from('home_blocks').select('*').order('created_at')),
     q(sb.from('diary_entries').select('*').order('entry_date',{ascending:false}).order('created_at',{ascending:false})),
-    q(sb.from('status_presets').select('*').order('sort_order').order('id'))]);
+    q(sb.from('status_presets').select('*').order('sort_order').order('id')),
+    q(sb.from('clock_cities').select('*').order('sort_order').order('id'))]);
   D={board:b.map(r=>norm('board',r)),countdown:c.map(r=>norm('countdown',r)),event:e.map(r=>norm('event',r)),
-     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm,diary:dr.map(diaryNorm),preset:pr};
+     status:s.map(r=>norm('status',r)),chat:m.reverse().map(r=>norm('chat',r)),log:lg,plan:pl,req:rq.map(reqNorm),home:hm,diary:dr.map(diaryNorm),preset:pr,city:ct};
   ensureDraft();
   renderAll();syncStatus();
 }
@@ -276,7 +296,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();stopDots();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();resetStatusForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();stopDots();stopClock();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();resetStatusForm();resetCityForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -290,7 +310,7 @@ function go(t){
   document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));
   let main=false;navBtns.forEach(b=>{const on=b.dataset.t===t;b.classList.toggle('on',on);if(on)main=true});
   $('more').classList.toggle('on',!main);
-  curPage=t;if(uid)openPage(t); // 打开页面：刷新内容，并把这个页面标记为已读（红点消失）
+  curPage=t;t==='clock'?startClock():stopClock();if(uid)openPage(t); // 打开页面：刷新内容，并把这个页面标记为已读（红点消失）
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -687,7 +707,7 @@ $('dadd').onclick=()=>{D.diary.unshift(newDraft());renderDiary()};
 
 /* ---- 消息提示（小红点）：每个用户各自记录每个页面「上次看到什么时候」 ---- */
 let curPage='home',unread=new Set(),dotTimer=null;
-const DRAWER_PAGES=['board','diary','status','log'],ALWAYS=new Set(['home','board','log','diary']); // ALWAYS：这几页每次打开都刷新
+const DRAWER_PAGES=['board','diary','status','log','clock'],ALWAYS=new Set(['home','board','log','diary']); // ALWAYS：这几页每次打开都刷新
 function renderDots(){
   document.querySelectorAll('nav button[data-t],.ditem[data-t]').forEach(b=>b.classList.toggle('hasdot',unread.has(b.dataset.t)));
   $('more').classList.toggle('hasdot',DRAWER_PAGES.some(p=>unread.has(p))); // 「更多」里有页面有新内容时，「更多」也亮红点
@@ -696,10 +716,10 @@ async function reloadEvents(){await loadProfiles();D.event=(await q(sb.from('eve
 async function reloadCountdowns(){await loadProfiles();D.countdown=(await q(sb.from('countdowns').select('*'))).map(r=>norm('countdown',r));renderCd()}
 async function reloadStatuses(){await loadProfiles();D.status=(await q(sb.from('statuses').select('*'))).map(r=>norm('status',r));D.preset=await q(sb.from('status_presets').select('*').order('sort_order').order('id'));renderStatus()}
 async function reloadChat(){await loadProfiles();D.chat=(await q(sb.from('chat_messages').select('*').order('created_at',{ascending:false}).limit(200))).reverse().map(r=>norm('chat',r));renderChat()}
-const RELOAD={home:reloadHome,board:reloadBoard,log:reloadLog,diary:reloadDiary,calendar:reloadEvents,countdown:reloadCountdowns,status:reloadStatuses,chat:reloadChat};
+const RELOAD={home:reloadHome,board:reloadBoard,log:reloadLog,diary:reloadDiary,calendar:reloadEvents,countdown:reloadCountdowns,status:reloadStatuses,chat:reloadChat,clock:reloadCities};
 async function markSeen(p){unread.delete(p);renderDots();try{await q(sb.rpc('mark_seen',{p}))}catch(e){}}
 async function openPage(p){
-  if(!uid)return;
+  if(!uid||!RELOAD[p])return; // 世界时钟这类没有「新内容」提示的页面，不需要标记已读
   if(ALWAYS.has(p)||unread.has(p)){try{await RELOAD[p]()}catch(e){return}} // 有新内容的页面，先刷新再标记已读
   await markSeen(p);
 }
@@ -720,7 +740,86 @@ async function startDots(){
 function stopDots(){clearInterval(dotTimer);dotTimer=null;unread=new Set();renderDots()}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&uid)pollDots()});
 
-function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary()}
+/* ---- 世界时钟（城市列表存在数据库里，管理员可增删改；所有时钟用同一个时间点计算，所以始终同步） ---- */
+const LOCAL_TZ=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
+const ALLTZ=(()=>{try{return Intl.supportedValuesOf('timeZone')}catch(e){return []}})();
+const canonTz=tz=>ALLTZ.find(z=>z.toLowerCase()===tz.toLowerCase())||tz; // 不区分大小写输入，统一成标准写法
+const tzOk=tz=>{try{new Intl.DateTimeFormat('en-US',{timeZone:tz});return true}catch(e){return false}};
+ALLTZ.forEach(z=>{const o=document.createElement('option');o.value=z;$('tzlist').appendChild(o)}); // 输入时的时区提示
+const fmts={};
+function wallOf(tz,dt){ // 某个时区此刻的「墙上时间」（浏览器自带的时区数据，自动处理夏令时）
+  const f=fmts[tz]||(fmts[tz]=new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'}));
+  const o={};f.formatToParts(dt).forEach(x=>{o[x.type]=+x.value});
+  return {y:o.year,mo:o.month,d:o.day,h:o.hour%24,mi:o.minute,s:o.second};
+}
+function clockInfo(tz,dt){
+  const w=wallOf(tz,dt),base=Math.floor(dt.getTime()/1000)*1000;
+  return {w,off:(Date.UTC(w.y,w.mo-1,w.d,w.h,w.mi,w.s)-base)/60000,time:pad(w.h)+':'+pad(w.mi)+':'+pad(w.s),dayNo:Date.UTC(w.y,w.mo-1,w.d)/86400000}; // off = 与 UTC 相差的分钟数
+}
+const utcLabel=m=>'UTC'+(m<0?'-':'+')+Math.floor(Math.abs(m)/60)+(Math.abs(m)%60?':'+pad(Math.abs(m)%60):'');
+function describe(info,loc){
+  const diff=info.off-loc.off,dd=info.dayNo-loc.dayNo,wk='周'+'日一二三四五六'[new Date(info.dayNo*86400000).getUTCDay()];
+  return {
+    date:info.w.mo+'月'+info.w.d+'日 '+wk+(dd===0?'':dd===1?'（明天）':dd===-1?'（昨天）':'（'+(dd>0?'+':'')+dd+'天）'),
+    rel:diff===0?'与本地相同':'比本地'+(diff>0?'快':'慢')+' '+(+(Math.abs(diff)/60).toFixed(2))+' 小时',
+    night:info.w.h<6||info.w.h>=18
+  };
+}
+let clockTimer=null,clockCards=null;
+function buildClock(){
+  const grid=$('clk-grid');grid.innerHTML='';
+  if(!D.city.length)grid.appendChild(h('div','ph','暂无城市占位'));
+  clockCards=D.city.map(c=>{
+    const card=h('div','card clk'),top=h('div','row'),ut=h('span','ph'),big=h('div','big'),sub=h('div','ph');
+    top.append(h('b','',c.name),ut);card.append(top,big,sub);grid.appendChild(card);return {tz:c.tz,card,ut,big,sub};
+  });
+}
+function tickClock(){
+  const now=new Date(),loc=clockInfo(LOCAL_TZ,now),ld=describe(loc,loc); // 同一个 now，所有时钟同时更新
+  $('clk-tz').textContent=LOCAL_TZ.replace(/_/g,' ')+' · '+utcLabel(loc.off);
+  $('clk-lt').textContent=loc.time;$('clk-ld').textContent=(ld.night?'🌙 ':'☀️ ')+ld.date;$('clk-local').classList.toggle('night',ld.night);
+  clockCards.forEach(c=>{
+    try{const i=clockInfo(c.tz,now),ds=describe(i,loc);
+      c.ut.textContent=utcLabel(i.off);c.big.textContent=i.time;c.sub.textContent=(ds.night?'🌙 ':'☀️ ')+ds.date+' · '+ds.rel;c.card.classList.toggle('night',ds.night)}
+    catch(e){c.ut.textContent='';c.big.textContent='--:--:--';c.sub.textContent='⚠️ 这个设备不认识时区「'+c.tz+'」'} // 个别时区不被浏览器支持时，只影响这一张卡片
+  });
+  clockTimer=setTimeout(tickClock,1000-now.getMilliseconds()+10); // 对齐到下一个整秒
+}
+function startClock(){stopClock();if(!clockCards)buildClock();tickClock()}
+function stopClock(){clearTimeout(clockTimer);clockTimer=null}
+function renderClock(){clockCards=null;renderCityMgr();if(clockTimer!==null)startClock()} // 城市列表变了：重建卡片；页面开着就继续走
+async function reloadCities(){D.city=await q(sb.from('clock_cities').select('*').order('sort_order').order('id'));renderClock()}
+// 管理城市（仅管理员；数据库规则也只允许管理员写）
+let cityEdit=null;
+function renderCityMgr(){
+  $('ctm').classList.toggle('hidden',!admin);
+  const box=$('ctlist');box.innerHTML='';
+  D.city.forEach(c=>{
+    const r=h('div','row sep');r.append(h('span','',c.name+' · '+c.tz));
+    const s=h('span','ctl');s.append(xbtn(()=>startCityEdit(c),'✎','编辑'),xbtn(()=>delCity(c)));r.append(s);box.appendChild(r);
+  });
+}
+function cityHint(){const tz=$('ctz').value.trim();$('cth').textContent=!tz?'':tzOk(tz)?'✅ 此刻那里的时间：'+clockInfo(tz,new Date()).time:'❌ 无效的时区'}
+function resetCityForm(){cityEdit=null;$('ctn').value='';$('ctz').value='';$('cth').textContent='';$('cts').textContent='添加城市';$('ctc').classList.add('hidden')}
+function startCityEdit(c){cityEdit=c.id;$('ctn').value=c.name;$('ctz').value=c.tz;$('cts').textContent='保存修改';$('ctc').classList.remove('hidden');cityHint();$('ctn').focus?.()}
+async function saveCity(){
+  const name=$('ctn').value.trim(),tz=canonTz($('ctz').value.trim());
+  if(!name){alert('请填写城市名称');return}
+  if(!tz||!tzOk(tz)){alert('时区无效。请填写类似 Asia/Shanghai、America/New_York 的时区名称（输入时会有提示）');return}
+  try{
+    if(cityEdit){const r=await q(sb.from('clock_cities').update({name,tz}).eq('id',cityEdit).select().single());D.city=D.city.map(x=>x.id===r.id?r:x)}
+    else{const next=Math.max(0,...D.city.map(x=>x.sort_order))+1;D.city.push(await q(sb.from('clock_cities').insert({name,tz,sort_order:next}).select().single()))}
+    D.city.sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);resetCityForm();renderClock();
+  }catch(e){fail(e)}
+}
+async function delCity(c){
+  if(!confirm('确定删除城市「'+c.name+'」？'))return;
+  try{const d=await q(sb.from('clock_cities').delete().eq('id',c.id).select());if(!d.length)throw new Error('无权删除，或已被删除');
+    D.city=D.city.filter(x=>x.id!==c.id);if(cityEdit===c.id)resetCityForm();renderClock()}catch(e){fail(e)}
+}
+$('ctz').oninput=cityHint;$('cts').onclick=saveCity;$('ctc').onclick=resetCityForm;$('ctn').onkeydown=$('ctz').onkeydown=e=>{if(e.key==='Enter')saveCity()};
+
+function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary();renderClock()}
 $('sd').value=ymd(now);
 renderAll();
 </script>
