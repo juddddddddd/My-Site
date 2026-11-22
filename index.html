@@ -23,7 +23,7 @@
 
 <div id="app" class="hidden">
   <header>
-    <h2>老天爷你很牛逼吗</h2>
+    <h2>网站名称占位</h2>
     <div class="who"><span class="tag hidden" id="adm">管理员</span><div class="av" id="av">U</div><button class="btn ghost" id="out">退出</button></div>
   </header>
 
@@ -152,6 +152,28 @@
     </div>
   </section>
 
+  <section id="farm">
+    <div class="farmtop">
+      <div class="fstats"><span class="fs">🌰 种子 <b id="fseed">0</b></span><span class="fs">🥬 蔬菜 <b id="fveg">0</b></span></div>
+      <div class="taskwrap">
+        <button class="btn ghost taskbtn" id="ftb">每日任务 ▾</button>
+        <div class="card taskmenu hidden" id="ftm">
+          <b>每日任务</b> <span class="ph">每天重置</span>
+          <div id="ftl" class="list" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="ph" id="fmsg">点一块空地可以播种；成熟后点击收菜，最先收的人拿走。</div>
+    <div class="plots" id="fplots"></div>
+    <div class="fmodal hidden" id="fdlg">
+      <div class="card">
+        <b id="fdt"></b>
+        <div class="ph" id="fdd" style="margin:8px 0 12px"></div>
+        <div class="send"><button class="btn" id="fpy">播种</button><button class="btn ghost" id="fpn">取消</button></div>
+      </div>
+    </div>
+  </section>
+
   <div class="mask" id="mask"></div>
   <aside class="drawer" id="drawer" aria-label="更多选项">
     <div class="dh"><b>更多</b><button class="btn ghost" id="dclose">✕</button></div>
@@ -159,6 +181,7 @@
     <button class="ditem" data-t="status"><span class="ic">🌤️</span>今日状态</button>
     <button class="ditem" data-t="diary"><span class="ic">📔</span>日记</button>
     <button class="ditem" data-t="clock"><span class="ic">🌍</span>世界时钟</button>
+    <button class="ditem" data-t="farm"><span class="ic">🌱</span>种菜</button>
     <button class="ditem" data-t="log"><span class="ic">📋</span>更新日志</button>
   </aside>
 
@@ -296,7 +319,7 @@ async function login(){
 $('go').onclick=login;
 $('sw').onclick=()=>mode(!reg);
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
-function reset(){unsub();stopDots();stopClock();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();resetStatusForm();resetCityForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
+function reset(){unsub();stopDots();stopClock();stopFarm();resetFarm();resetLogForm();closeReason();closeHome();resetDiary();resetEventForm();resetPresetForm();resetStatusForm();resetCityForm();user=null;uid=null;admin=false;D=EMPTY();P={};renderAll();syncStatus();show()}
 $('out').onclick=async()=>{try{await sb.auth.signOut()}catch(e){}reset()};
 if(!configured){$('err').textContent='尚未配置 Supabase：请编辑 config.js';$('go').disabled=true;show()}
 else{
@@ -310,7 +333,7 @@ function go(t){
   document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));
   let main=false;navBtns.forEach(b=>{const on=b.dataset.t===t;b.classList.toggle('on',on);if(on)main=true});
   $('more').classList.toggle('on',!main);
-  curPage=t;t==='clock'?startClock():stopClock();if(uid)openPage(t); // 打开页面：刷新内容，并把这个页面标记为已读（红点消失）
+  curPage=t;t==='clock'?startClock():stopClock();t==='farm'?startFarm():stopFarm();if(uid)openPage(t); // 打开页面：刷新内容，并把这个页面标记为已读（红点消失）
 }
 navBtns.forEach(b=>b.onclick=()=>go(b.dataset.t));
 function drawer(open){$('drawer').classList.toggle('open',open);$('mask').classList.toggle('open',open)}
@@ -818,6 +841,102 @@ async function delCity(c){
     D.city=D.city.filter(x=>x.id!==c.id);if(cityEdit===c.id)resetCityForm();renderClock()}catch(e){fail(e)}
 }
 $('ctz').oninput=cityHint;$('cts').onclick=saveCity;$('ctc').onclick=resetCityForm;$('ctn').onkeydown=$('ctz').onkeydown=e=>{if(e.key==='Enter')saveCity()};
+
+/* ---- 种菜（四块田所有人共用；所有规则在数据库函数里执行，页面只负责显示和发起操作） ---- */
+let farm=null,farmSkew=0,farmTickT=null,farmPollT=null,farmChan=null,farmTaskEdit=null,farmDraft=null,farmPlantIdx=null,farmBusy=false,farmMsgT=null;
+const fmtDur=ms=>{const s=Math.max(0,Math.ceil(ms/1000));return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60)};
+const plotState=p=>!p.ripe_at?'empty':(new Date(p.ripe_at).getTime()<=Date.now()+farmSkew?'ripe':'grow'); // 用服务器时间校准，不受本机时钟快慢影响
+const FARM_ERR={'farm: no seeds':'没有种子了：完成每日任务可以获得种子','farm: busy':'这块田刚刚被别人播种了','farm: empty':'这块田已经空了，菜可能已经被别人收走了','farm: not ripe':'还没有成熟','farm: claimed':'今天已经领取过了','farm: no task':'这个任务已经不存在了'};
+function farmMsg(t){$('fmsg').textContent=t;clearTimeout(farmMsgT);farmMsgT=setTimeout(()=>{$('fmsg').textContent='点一块空地可以播种；成熟后点击收菜，最先收的人拿走。'},6000)}
+function farmErr(e){const k=Object.keys(FARM_ERR).find(x=>(e.message||'').includes(x));farmMsg(k?FARM_ERR[k]:msg(e));farmRefresh().catch(()=>{})}
+async function farmRefresh(){
+  const s=await q(sb.rpc('farm_state'));
+  farmSkew=new Date(s.now).getTime()-Date.now();farm=s;renderFarm();
+}
+function renderFarm(){
+  $('fseed').textContent=farm.seeds;$('fveg').textContent=farm.veggies;
+  const box=$('fplots');
+  if(box.children.length!==farm.plots.length){box.innerHTML='';farm.plots.forEach((p,i)=>{const b=h('button','plot');b.append(h('div','pt'),h('div','ps'));b.onclick=()=>onPlot(i);box.appendChild(b)})}
+  paintPlots();
+  if(farmTaskEdit===null)renderTasks(); // 管理员正在编辑任务时不刷新，避免打断输入
+}
+function paintPlots(){ // 每秒调用：原地更新文字和样式，不重建按钮（否则点击会被打断）
+  if(!farm)return;
+  [...$('fplots').children].forEach((b,i)=>{
+    const p=farm.plots[i],st=plotState(p);b.className='plot '+st;
+    if(st==='empty'){b.children[0].textContent='空地';b.children[1].textContent='点击播种'}
+    else if(st==='grow'){b.children[0].textContent=fmtDur(new Date(p.ripe_at).getTime()-(Date.now()+farmSkew));b.children[1].textContent='剩余时间'} // 生长中只显示剩余时间
+    else{b.children[0].textContent='🥬 已成熟';b.children[1].textContent='点击收取'}
+  });
+}
+function onPlot(i){
+  if(!farm||farmBusy)return;
+  const st=plotState(farm.plots[i]);
+  if(st==='empty'){
+    if(farm.seeds>0)openPlant(i);else farmMsg(FARM_ERR['farm: no seeds']);
+  }else if(st==='ripe')harvest(i);
+  else farmMsg('还在生长中，请耐心等待');
+}
+function openPlant(i){farmPlantIdx=i;$('fdt').textContent='在 '+(i+1)+' 号田播种？';$('fdd').textContent='将消耗 1 个种子（你现在有 '+farm.seeds+' 个）。种子成熟后，任何人都可以收取。';$('fdlg').classList.remove('hidden')}
+function closePlant(){farmPlantIdx=null;$('fdlg').classList.add('hidden')}
+async function doPlant(){
+  const i=farmPlantIdx;if(i===null||farmBusy)return;closePlant();farmBusy=true;
+  try{await q(sb.rpc('farm_plant',{p_plot:farm.plots[i].id}));farmMsg('播种成功！');await farmRefresh()}catch(e){farmErr(e)}finally{farmBusy=false}
+}
+async function harvest(i){
+  farmBusy=true;
+  try{const n=await q(sb.rpc('farm_harvest',{p_plot:farm.plots[i].id}));farmMsg('收菜成功！蔬菜 +'+n);await farmRefresh()}catch(e){farmErr(e)}finally{farmBusy=false}
+}
+// 每日任务（右上角下拉菜单；管理员可修改任务内容和奖励种子数）
+function renderTasks(){
+  const box=$('ftl');box.innerHTML='';
+  $('ftb').classList.toggle('pending',farm.tasks.some(t=>!t.done)); // 还有没领的任务：按钮上亮红点
+  if(!farm.tasks.length)box.appendChild(h('div','ph','暂无任务占位'));
+  farm.tasks.forEach(t=>{
+    const r=h('div','row sep');
+    if(admin&&farmTaskEdit===t.id){
+      const f=h('div','tedit'),ti=h('input'),ri=h('input'),bar=h('div','send'),sv=h('button','btn sm','保存'),cn=h('button','btn ghost sm','取消');
+      ti.value=farmDraft.title;ti.maxLength=30;ti.placeholder='任务内容';ti.oninput=()=>{farmDraft.title=ti.value};
+      ri.type='number';ri.min=0;ri.max=100;ri.value=farmDraft.reward;ri.oninput=()=>{farmDraft.reward=ri.value};
+      sv.onclick=()=>saveTask(t);cn.onclick=()=>{farmTaskEdit=null;farmDraft=null;renderTasks()};
+      bar.append(sv,cn);f.append(ti,h('div','ph','完成后奖励的种子数'),ri,bar);r.append(f);
+    }else{
+      const l=h('div'),s=h('span','ctl');l.append(h('b','',t.title),h('div','ph','奖励：'+t.reward+' 个种子'));
+      if(t.done)s.append(h('span','tag','✅ 已完成'));
+      else{const b=h('button','btn sm','领取');b.onclick=()=>claimTask(t);s.append(b)}
+      if(admin)s.append(xbtn(()=>{farmTaskEdit=t.id;farmDraft={title:t.title,reward:t.reward};renderTasks()},'✎','编辑'));
+      r.append(l,s);
+    }
+    box.appendChild(r);
+  });
+}
+async function claimTask(t){
+  if(farmBusy)return;farmBusy=true;
+  try{const n=await q(sb.rpc('farm_claim',{p_task:t.id}));farmMsg('任务完成！获得 '+n+' 个种子');await farmRefresh()}catch(e){farmErr(e)}finally{farmBusy=false}
+}
+async function saveTask(t){
+  const title=farmDraft.title.trim(),reward=parseInt(farmDraft.reward,10);
+  if(!title){alert('请填写任务内容');return}
+  if(!(reward>=0&&reward<=100)){alert('奖励的种子数请填 0 到 100 之间的整数');return}
+  try{await q(sb.from('farm_tasks').update({title,reward}).eq('id',t.id).select().single());farmTaskEdit=null;farmDraft=null;await farmRefresh()}catch(e){fail(e)}
+}
+function startFarm(){
+  stopFarm();
+  farmRefresh().catch(farmErr);
+  farmTickT=setInterval(paintPlots,250); // 每秒刷新 4 次，倒计时跳动不会有明显延迟
+  farmPollT=setInterval(()=>farmRefresh().catch(()=>{}),10000); // 每 10 秒同步一次，看到别人播种/收菜
+  try{farmChan=sb.channel('farm-plots').on('postgres_changes',{event:'*',schema:'public',table:'farm_plots'},()=>farmRefresh().catch(()=>{})).subscribe()}catch(e){}
+}
+function stopFarm(){
+  clearInterval(farmTickT);clearInterval(farmPollT);farmTickT=farmPollT=null;
+  if(farmChan){try{sb.removeChannel(farmChan)}catch(e){}farmChan=null}
+  closePlant();$('ftm').classList.add('hidden');
+}
+function resetFarm(){farm=null;farmTaskEdit=null;farmDraft=null;$('fseed').textContent='0';$('fveg').textContent='0';$('fplots').innerHTML=''}
+$('ftb').onclick=()=>$('ftm').classList.toggle('hidden');
+document.addEventListener('click',e=>{if(!e.target.closest('.taskwrap'))$('ftm').classList.add('hidden')});
+$('fpy').onclick=doPlant;$('fpn').onclick=closePlant;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlant();$('ftm').classList.add('hidden')}});
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary();renderClock()}
 $('sd').value=ymd(now);
