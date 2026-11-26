@@ -155,11 +155,28 @@
   <section id="farm">
     <div class="farmtop">
       <div class="fstats"><span class="fs">🌰 种子 <b id="fseed">0</b></span><span class="fs">🥬 蔬菜 <b id="fveg">0</b></span></div>
-      <div class="taskwrap">
-        <button class="btn ghost taskbtn" id="ftb">每日任务 ▾</button>
-        <div class="card taskmenu hidden" id="ftm">
-          <b>每日任务</b> <span class="ph">每天重置</span>
-          <div id="ftl" class="list" style="margin-top:10px"></div>
+      <div class="farmbtns">
+        <div class="taskwrap">
+          <button class="btn ghost taskbtn" id="ftb">每日任务 ▾</button>
+          <div class="card taskmenu hidden" id="ftm">
+            <b>每日任务</b> <span class="ph">每天重置</span>
+            <div id="ftl" class="list menulist" style="margin-top:10px"></div>
+          </div>
+        </div>
+        <div class="taskwrap">
+          <button class="btn ghost taskbtn" id="frb">排行榜 ▾</button>
+          <div class="card taskmenu hidden" id="frm">
+            <b>排行榜</b> <span class="ph">按蔬菜数量排名</span>
+            <div id="frh" style="margin:8px 0"></div>
+            <div id="frl" class="list menulist"></div>
+          </div>
+        </div>
+        <div class="taskwrap">
+          <button class="btn ghost taskbtn" id="fmb">消息 ▾</button>
+          <div class="card taskmenu hidden" id="fmm">
+            <b>消息</b> <span class="ph">最新的在最上面</span>
+            <div id="fml" class="list menulist" style="margin-top:10px"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -730,7 +747,7 @@ $('dadd').onclick=()=>{D.diary.unshift(newDraft());renderDiary()};
 
 /* ---- 消息提示（小红点）：每个用户各自记录每个页面「上次看到什么时候」 ---- */
 let curPage='home',unread=new Set(),dotTimer=null;
-const DRAWER_PAGES=['board','diary','status','log','clock'],ALWAYS=new Set(['home','board','log','diary']); // ALWAYS：这几页每次打开都刷新
+const DRAWER_PAGES=['board','diary','status','log','clock','farm'],ALWAYS=new Set(['home','board','log','diary']); // ALWAYS：这几页每次打开都刷新
 function renderDots(){
   document.querySelectorAll('nav button[data-t],.ditem[data-t]').forEach(b=>b.classList.toggle('hasdot',unread.has(b.dataset.t)));
   $('more').classList.toggle('hasdot',DRAWER_PAGES.some(p=>unread.has(p))); // 「更多」里有页面有新内容时，「更多」也亮红点
@@ -750,6 +767,7 @@ async function pollDots(){
   if(!uid)return;
   try{
     unread=new Set((await q(sb.rpc('unread_pages'))).map(r=>r.page));
+    try{const fb=(curPage==='farm'&&farm)?farm.badges:await q(sb.rpc('farm_badges'));if(fb.task||fb.rank||fb.msg)unread.add('farm')}catch(e){} // 种菜：每日任务/排行榜/消息任意一个有红点，「种菜」就亮红点
     if(unread.has(curPage))await openPage(curPage); // 正在看的页面有新内容：直接刷新并标记已读，不亮红点
     renderDots();
   }catch(e){}
@@ -845,28 +863,54 @@ $('ctz').oninput=cityHint;$('cts').onclick=saveCity;$('ctc').onclick=resetCityFo
 /* ---- 种菜（四块田所有人共用；所有规则在数据库函数里执行，页面只负责显示和发起操作） ---- */
 let farm=null,farmSkew=0,farmTickT=null,farmPollT=null,farmChan=null,farmTaskEdit=null,farmDraft=null,farmPlantIdx=null,farmBusy=false,farmMsgT=null;
 const fmtDur=ms=>{const s=Math.max(0,Math.ceil(ms/1000));return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60)};
+const fmtT=iso=>{const t=new Date(iso);return ymd(t)+' '+pad(t.getHours())+':'+pad(t.getMinutes())};
 const plotState=p=>!p.ripe_at?'empty':(new Date(p.ripe_at).getTime()<=Date.now()+farmSkew?'ripe':'grow'); // 用服务器时间校准，不受本机时钟快慢影响
+const FARM_HINT='点一块空地可以播种；成熟后点击收菜，最先收的人拿走。';
 const FARM_ERR={'farm: no seeds':'没有种子了：完成每日任务可以获得种子','farm: busy':'这块田刚刚被别人播种了','farm: empty':'这块田已经空了，菜可能已经被别人收走了','farm: not ripe':'还没有成熟','farm: claimed':'今天已经领取过了','farm: no task':'这个任务已经不存在了'};
-function farmMsg(t){$('fmsg').textContent=t;clearTimeout(farmMsgT);farmMsgT=setTimeout(()=>{$('fmsg').textContent='点一块空地可以播种；成熟后点击收菜，最先收的人拿走。'},6000)}
+function farmMsg(t){$('fmsg').textContent=t;clearTimeout(farmMsgT);farmMsgT=setTimeout(()=>{$('fmsg').textContent=FARM_HINT},6000)}
 function farmErr(e){const k=Object.keys(FARM_ERR).find(x=>(e.message||'').includes(x));farmMsg(k?FARM_ERR[k]:msg(e));farmRefresh().catch(()=>{})}
+// 三个下拉菜单：每日任务 / 排行榜 / 消息（同一时间只开一个；列表太长时在菜单里滚动）
+const MENUS=[['ftb','ftm'],['frb','frm'],['fmb','fmm']];
+const menuOpen=m=>!$(m).classList.contains('hidden');
+function closeMenus(except){MENUS.forEach(([b,m])=>{if(m!==except)$(m).classList.add('hidden')})}
+function toggleMenu(m){
+  const open=menuOpen(m);closeMenus(m);$(m).classList.toggle('hidden',open);
+  if(!open&&farm){if(m==='frm')seenKind('rank');if(m==='fmm')seenKind('msg');renderFarmBadges()}
+}
+async function seenKind(k){ // 打开排行榜/消息：红点消失，并告诉数据库「已看」
+  if(!farm)return;farm.badges[k]=false;renderFarmBadges();setFarmDot();
+  try{await q(sb.rpc('farm_seen',{p_kind:k}))}catch(e){}
+}
+function renderFarmBadges(){
+  $('ftb').classList.toggle('pending',farm.tasks.some(t=>!t.done));
+  $('frb').classList.toggle('pending',!!farm.badges.rank&&!menuOpen('frm'));
+  $('fmb').classList.toggle('pending',!!farm.badges.msg&&!menuOpen('fmm'));
+}
+function setFarmDot(){ // 每日任务、排行榜、消息任意一个有红点，更多菜单里的「种菜」就亮红点
+  const b=farm.badges,on=!!(farm.tasks.some(t=>!t.done)||b.rank||b.msg);
+  on?unread.add('farm'):unread.delete('farm');renderDots();
+}
 async function farmRefresh(){
   const s=await q(sb.rpc('farm_state'));
   farmSkew=new Date(s.now).getTime()-Date.now();farm=s;renderFarm();
+  if(menuOpen('frm')&&farm.badges.rank)seenKind('rank'); // 正在看着时来了新变化：直接算已看，不亮红点
+  if(menuOpen('fmm')&&farm.badges.msg)seenKind('msg');
 }
 function renderFarm(){
   $('fseed').textContent=farm.seeds;$('fveg').textContent=farm.veggies;
   const box=$('fplots');
-  if(box.children.length!==farm.plots.length){box.innerHTML='';farm.plots.forEach((p,i)=>{const b=h('button','plot');b.append(h('div','pt'),h('div','ps'));b.onclick=()=>onPlot(i);box.appendChild(b)})}
+  if(box.children.length!==farm.plots.length){box.innerHTML='';farm.plots.forEach((p,i)=>{const b=h('button','plot');b.append(h('div','pt'),h('div','ps'),h('div','po'));b.onclick=()=>onPlot(i);box.appendChild(b)})}
   paintPlots();
   if(farmTaskEdit===null)renderTasks(); // 管理员正在编辑任务时不刷新，避免打断输入
+  renderRank();renderFarmLog();renderFarmBadges();setFarmDot();
 }
-function paintPlots(){ // 每秒调用：原地更新文字和样式，不重建按钮（否则点击会被打断）
+function paintPlots(){ // 每秒调用几次：原地更新文字和样式，不重建按钮（否则点击会被打断）
   if(!farm)return;
   [...$('fplots').children].forEach((b,i)=>{
-    const p=farm.plots[i],st=plotState(p);b.className='plot '+st;
-    if(st==='empty'){b.children[0].textContent='空地';b.children[1].textContent='点击播种'}
-    else if(st==='grow'){b.children[0].textContent=fmtDur(new Date(p.ripe_at).getTime()-(Date.now()+farmSkew));b.children[1].textContent='剩余时间'} // 生长中只显示剩余时间
-    else{b.children[0].textContent='🥬 已成熟';b.children[1].textContent='点击收取'}
+    const p=farm.plots[i],st=plotState(p),own=(p.owner||'已注销用户')+' 的菜';b.className='plot '+st;
+    if(st==='empty'){b.children[0].textContent='空地';b.children[1].textContent='点击播种';b.children[2].textContent=''}
+    else if(st==='grow'){b.children[0].textContent=fmtDur(new Date(p.ripe_at).getTime()-(Date.now()+farmSkew));b.children[1].textContent='剩余时间';b.children[2].textContent=own} // 生长中：剩余时间 + 是谁的菜
+    else{b.children[0].textContent='🥬 已成熟';b.children[1].textContent='点击收取';b.children[2].textContent=own}
   });
 }
 function onPlot(i){
@@ -887,10 +931,37 @@ async function harvest(i){
   farmBusy=true;
   try{const n=await q(sb.rpc('farm_harvest',{p_plot:farm.plots[i].id}));farmMsg('收菜成功！蔬菜 +'+n);await farmRefresh()}catch(e){farmErr(e)}finally{farmBusy=false}
 }
-// 每日任务（右上角下拉菜单；管理员可修改任务内容和奖励种子数）
+// 排行榜：加入后才能看；按蔬菜数量从多到少排名
+function renderRank(){
+  const head=$('frh'),box=$('frl');head.innerHTML='';box.innerHTML='';
+  if(!farm.in_rank){
+    const b=h('button','btn sm','加入排行');b.onclick=()=>rankSet(true);
+    head.append(h('div','ph','加入排行后可以查看排行榜；你的种子和蔬菜数量也会显示给其他已加入的人。'),b);return;
+  }
+  const b=h('button','btn ghost sm','退出排行');b.onclick=()=>rankSet(false);head.append(b);
+  farm.rank.forEach((r,i)=>{
+    const row=h('div','row sep'),l=h('span','',(i+1)+'. '+r.name);
+    if(r.me)l.append(h('span','tag','我'));
+    row.append(l,h('span','ph','🌰 '+r.seeds+'　🥬 '+r.veggies));box.appendChild(row);
+  });
+}
+async function rankSet(j){
+  if(farmBusy)return;farmBusy=true;
+  try{await q(sb.rpc('farm_rank_set',{p_join:j}));await farmRefresh()}catch(e){farmErr(e)}finally{farmBusy=false}
+}
+// 消息：谁播种了、谁收取了谁的蔬菜；最新的在最上面，最早的在最下面
+function logText(l){
+  if(l.kind==='plant')return l.actor+' 在 '+l.plot+' 号田播种了';
+  return l.actor+(l.owner===l.actor?' 收取了自己的蔬菜':' 收取了 '+l.owner+' 的蔬菜')+'（'+l.plot+' 号田，蔬菜 +'+l.amount+'）';
+}
+function renderFarmLog(){
+  const box=$('fml');box.innerHTML='';
+  if(!farm.log.length)box.appendChild(h('div','ph','暂无消息占位'));
+  farm.log.forEach(l=>{const r=h('div','sep');r.append(h('div','',logText(l)),h('div','ph',fmtT(l.at)));box.appendChild(r)});
+}
+// 每日任务（管理员可修改任务内容和奖励种子数）
 function renderTasks(){
   const box=$('ftl');box.innerHTML='';
-  $('ftb').classList.toggle('pending',farm.tasks.some(t=>!t.done)); // 还有没领的任务：按钮上亮红点
   if(!farm.tasks.length)box.appendChild(h('div','ph','暂无任务占位'));
   farm.tasks.forEach(t=>{
     const r=h('div','row sep');
@@ -930,13 +1001,13 @@ function startFarm(){
 function stopFarm(){
   clearInterval(farmTickT);clearInterval(farmPollT);farmTickT=farmPollT=null;
   if(farmChan){try{sb.removeChannel(farmChan)}catch(e){}farmChan=null}
-  closePlant();$('ftm').classList.add('hidden');
+  closePlant();closeMenus();
 }
 function resetFarm(){farm=null;farmTaskEdit=null;farmDraft=null;$('fseed').textContent='0';$('fveg').textContent='0';$('fplots').innerHTML=''}
-$('ftb').onclick=()=>$('ftm').classList.toggle('hidden');
-document.addEventListener('click',e=>{if(!e.target.closest('.taskwrap'))$('ftm').classList.add('hidden')});
+$('ftb').onclick=()=>toggleMenu('ftm');$('frb').onclick=()=>toggleMenu('frm');$('fmb').onclick=()=>toggleMenu('fmm');
+document.addEventListener('click',e=>{if(!e.target.closest('.taskwrap'))closeMenus()});
 $('fpy').onclick=doPlant;$('fpn').onclick=closePlant;
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlant();$('ftm').classList.add('hidden')}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlant();closeMenus()}});
 
 function renderAll(){renderCal();renderCd();renderBoard();renderChat();renderStatus();renderLog();renderHome();renderDiary();renderClock()}
 $('sd').value=ymd(now);
